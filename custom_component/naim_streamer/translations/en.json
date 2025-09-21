@@ -1,0 +1,10 @@
+{
+    "config": {
+        "step": {
+            "confirm": {
+                "title": "Add {name}?",
+                "description": "Do you want to add the discovered device {name} to Home Assistant?"
+            }
+        }
+    }
+}
