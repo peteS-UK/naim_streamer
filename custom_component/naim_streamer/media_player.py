@@ -36,6 +36,8 @@ SUPPORT_STREAMER = (
     | MediaPlayerEntityFeature.REPEAT_SET
     | MediaPlayerEntityFeature.SELECT_SOURCE
     | MediaPlayerEntityFeature.SHUFFLE_SET
+    | MediaPlayerEntityFeature.VOLUME_SET
+    | MediaPlayerEntityFeature.VOLUME_MUTE
 )
 
 SOURCES = ("CD", "Radio", "PC", "iPod", "TV", "AV", "HDD", "Aux")
@@ -49,23 +51,16 @@ async def async_setup_entry(
     """Setup Media Player"""
 
     async_add_entities(
-        [
-            NaimStreamerDevice(
-                coordinator=config_entry.runtime_data.coordinator, hass=hass
-            )
-        ]
+        [NaimStreamerDevice(coordinator=config_entry.runtime_data.coordinator)]
     )
 
 
 class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
     # Representation of a Naim Streamer
 
-    def __init__(
-        self, coordinator: StreamerDataUpdateCoordinator, hass: core.HomeAssistant
-    ):
+    def __init__(self, coordinator: StreamerDataUpdateCoordinator):
         super().__init__(coordinator)
         self._streamer = coordinator.streamer
-        self._hass = hass
         self._state = MediaPlayerState.IDLE
         self._unique_id = self._streamer.udn
         self._device_class = "receiver"
@@ -73,6 +68,9 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
         self._source = ""
         self._sources = SOURCES
         self._shuffle = False
+        self._attr_unique_id = coordinator.uuid
+        self._attr_name = None
+        self._attr_has_entity_name = True
 
     @property
     def should_poll(self):
@@ -81,18 +79,6 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
     @property
     def icon(self):
         return "mdi:disc"
-
-    @property
-    def state(self) -> MediaPlayerState:
-        return self._state
-
-    @property
-    def name(self):
-        return None
-
-    @property
-    def has_entity_name(self):
-        return True
 
     @property
     def source_list(self):
@@ -122,3 +108,82 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
     def shuffle(self) -> bool:
         """Boolean if shuffle is enabled."""
         return self._shuffle
+
+    @property
+    def volume_level(self):
+        volume = self.coordinator.data.get("volume")
+        return volume / 100 if volume is not None else None
+
+    @property
+    def is_volume_muted(self):
+        return self.coordinator.data.get("mute")
+
+    @property
+    def state(self):
+        return self.coordinator.data.get("state")
+
+    @property
+    def media_title(self):
+        return self.coordinator.data.get("media_title")
+
+    @property
+    def media_artist(self):
+        return self.coordinator.data.get("media_artist")
+
+    @property
+    def media_duration(self):
+        return self.coordinator.data.get("media_duration")
+
+    async def async_media_play(self):
+        """Send play command to the streamer."""
+        await self.coordinator.streamer.play()
+        self.coordinator.data["state"] = MediaPlayerState.PLAYING
+        self.async_write_ha_state()
+
+    async def async_media_pause(self):
+        """Send pause command to the streamer."""
+        await self.coordinator.streamer.pause()
+        self.coordinator.data["state"] = MediaPlayerState.PAUSED
+        self.async_write_ha_state()
+
+    async def async_media_stop(self):
+        """Send stop command to the streamer."""
+        await self.coordinator.streamer.stop()
+        self.coordinator.data["state"] = MediaPlayerState.IDLE
+        self.async_write_ha_state()
+
+    async def async_set_volume_level(self, volume: float):
+        """
+        Set volume level.
+        volume: 0.0–1.0
+        """
+        vol_int = int(volume * 100)
+        await self.coordinator.streamer.set_volume(vol_int)
+        self.coordinator.data["volume"] = vol_int
+        self.async_write_ha_state()
+
+    async def async_mute_volume(self, mute: bool):
+        """Mute or unmute the volume, then confirm the actual state."""
+        # UPnP expects "1" or "0" as DesiredMute
+        _LOGGER.critical("Mute: %s", await self.coordinator.streamer.set_mute(mute))
+
+        # Read back the mute state from the device
+        mute_data = await self.coordinator.streamer.get_mute(parsed=True)
+        # UPnP returns "0" or "1" as strings under CurrentMute
+        actual_mute = bool(int(mute_data.get("CurrentMute", 0)))
+
+        # Update coordinator snapshot with the confirmed value
+        self.coordinator.data["mute"] = actual_mute
+
+        # Push the update to HA immediately
+        self.async_write_ha_state()
+
+    async def async_media_next_track(self):
+        await self.coordinator.streamer.next()
+        self.coordinator.data["state"] = MediaPlayerState.PLAYING
+        self.async_write_ha_state()
+
+    async def async_media_previous_track(self):
+        await self.coordinator.streamer.previous()
+        self.coordinator.data["state"] = MediaPlayerState.PLAYING
+        self.async_write_ha_state()

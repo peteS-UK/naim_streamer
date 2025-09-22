@@ -15,6 +15,20 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .naim_streamer_client import NaimStreamerClient
+from homeassistant.components.media_player import (
+    MediaPlayerEntity,
+    MediaPlayerEntityFeature,
+    MediaPlayerState,
+    RepeatMode,
+)
+
+TRANSPORT_TO_HA_STATE = {
+    "STOPPED": MediaPlayerState.IDLE,
+    "NO_MEDIA_PRESENT": MediaPlayerState.IDLE,
+    "PLAYING": MediaPlayerState.PLAYING,
+    "PAUSED_PLAYBACK": MediaPlayerState.PAUSED,
+    "TRANSITIONING": MediaPlayerState.PLAYING,  # treat as active
+}
 
 
 @dataclass
@@ -48,7 +62,7 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER,
             config_entry=config_entry,
             name=config_entry.data[CONF_NAME],
-            update_interval=timedelta(seconds=30),
+            update_interval=timedelta(seconds=10),
             always_update=False,
         )
         self.hass = hass
@@ -76,7 +90,50 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         )
         self.uuid = self.streamer.udn
 
-    async def _async_update_data(self):
-        """Fetch data from API endpoint."""
+        await self._async_update_data()
 
-        data: dict = {}
+    async def _async_update_data(self):
+        """Fetch the latest state from the Naim streamer."""
+        try:
+            # Volume
+            vol_data = await self.streamer.get_volume(parsed=True)
+            volume = int(vol_data.get("CurrentVolume", 0))
+
+            # Mute
+            mute_data = await self.streamer.get_mute(parsed=True)
+            mute = bool(int(mute_data.get("CurrentMute", 0)))
+
+            # Transport state (map to HA MediaPlayerState)
+            transport_data = await self.streamer.get_transport_info(parsed=True)
+            raw_transport_state = str(
+                transport_data.get("CurrentTransportState", "UNKNOWN")
+            )
+            ha_state = TRANSPORT_TO_HA_STATE.get(
+                raw_transport_state.upper(), MediaPlayerState.IDLE
+            )
+
+            # Media info
+            media_info = await self.streamer.get_media_info(parsed=True)
+            media_title = media_info.get("Title", "")
+            media_artist = media_info.get("Artist", "")
+            raw_duration = media_info.get("MediaDuration", "0")
+            if ":" in raw_duration:
+                try:
+                    h, m, s = (int(x) for x in raw_duration.split(":"))
+                    media_duration = h * 3600 + m * 60 + s
+                except ValueError:
+                    media_duration = 0
+            else:
+                media_duration = int(raw_duration) if raw_duration.isdigit() else 0
+
+            return {
+                "volume": volume,
+                "mute": mute,
+                "state": ha_state,  # already mapped to HA enum
+                "media_title": media_title,
+                "media_artist": media_artist,
+                "media_duration": media_duration,
+            }
+
+        except Exception as err:
+            raise UpdateFailed(f"Error fetching data from streamer: {err}") from err
