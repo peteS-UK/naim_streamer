@@ -16,8 +16,13 @@ from homeassistant.helpers import (
     entity_platform,
 )
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import DOMAIN, SERVICE_SEND_COMMAND, CONF_BROADLINK, BROADLINK_COMMANDS
+
+from .coordinator import StreamerDataUpdateCoordinator
+from .entity import StreamerEntity
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,28 +43,32 @@ SOURCES = ("CD", "Radio", "PC", "iPod", "TV", "AV", "HDD", "Aux")
 
 async def async_setup_entry(
     hass: core.HomeAssistant,
-    config_entry: config_entries.ConfigEntry,
-    async_add_entities,
+    config_entry: StreamerEntity,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    config = hass.data[DOMAIN][config_entry.entry_id]
+    """Setup Media Player"""
 
-    streamer = config[DOMAIN]
+    async_add_entities(
+        [
+            NaimStreamerDevice(
+                coordinator=config_entry.runtime_data.coordinator, hass=hass
+            )
+        ]
+    )
 
-    async_add_entities([NDXDevice(streamer, hass, config[CONF_BROADLINK])])
 
+class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
+    # Representation of a Naim Streamer
 
-class NDXDevice(MediaPlayerEntity):
-    # Representation of a Emotiva Processor
-
-    def __init__(self, device, hass, broadlink_entity):
-        self._device = device
+    def __init__(
+        self, coordinator: StreamerDataUpdateCoordinator, hass: core.HomeAssistant
+    ):
+        self._streamer = coordinator.streamer
         self._hass = hass
         self._state = MediaPlayerState.IDLE
-        # self._entity_id = "media_player.naim_ndx"
-        self._unique_id = self._device.udn
+        self._unique_id = self._streamer.udn
         self._device_class = "receiver"
-        self._name = self._device.name
-        self._broadlink_entity = broadlink_entity
+        self._name = self._streamer.name
         self._source = ""
         self._sources = SOURCES
         self._shuffle = False
@@ -83,19 +92,6 @@ class NDXDevice(MediaPlayerEntity):
     @property
     def has_entity_name(self):
         return True
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return the device info."""
-        return DeviceInfo(
-            identifiers={
-                # Serial numbers are unique identifiers within a specific domain
-                (DOMAIN, self._unique_id)
-            },
-            name=self._name,
-            manufacturer=self._device.manufacturer,
-            model=self._device.model,
-        )
 
     @property
     def source_list(self):
@@ -125,59 +121,3 @@ class NDXDevice(MediaPlayerEntity):
     def shuffle(self) -> bool:
         """Boolean if shuffle is enabled."""
         return self._shuffle
-
-    async def send_command(self, command):
-        await self._send_broadlink_command(command)
-
-    async def _send_broadlink_command(self, command):
-        await self._hass.services.async_call(
-            "remote",
-            "send_command",
-            {
-                "entity_id": self._broadlink_entity,
-                "num_repeats": "1",
-                "delay_secs": "0.4",
-                "command": f"b64:{BROADLINK_COMMANDS[command]}",
-            },
-        )
-
-    async def async_set_repeat(self, repeat: RepeatMode) -> None:
-        """Set the repeat mode."""
-        if repeat == RepeatMode.ONE:
-            await self._send_broadlink_command("repeat")
-            self.async_schedule_update_ha_state()
-
-    async def async_media_stop(self) -> None:
-        """Send stop command to media player."""
-        await self._send_broadlink_command("stop")
-        self._state = MediaPlayerState.IDLE
-        self.async_schedule_update_ha_state()
-
-    async def async_media_play(self) -> None:
-        """Send play command to media player."""
-        await self._send_broadlink_command("play")
-        self._state = MediaPlayerState.PLAYING
-        self.async_schedule_update_ha_state()
-
-    async def async_media_pause(self) -> None:
-        """Send pause command to media player."""
-        await self._send_broadlink_command("pause")
-        self._state = MediaPlayerState.PAUSED
-        self.async_schedule_update_ha_state()
-
-    async def async_media_next_track(self) -> None:
-        """Send next track command."""
-        await self._send_broadlink_command("next")
-
-    async def async_media_previous_track(self) -> None:
-        """Send next track command."""
-        await self._send_broadlink_command("previous")
-
-    async def async_select_source(self, source: str) -> None:
-        await self._send_broadlink_command(source.lower())
-
-    async def async_set_shuffle(self, shuffle: bool) -> None:
-        """Enable/disable shuffle mode."""
-        self._shuffle = not self._shuffle
-        await self._send_broadlink_command("shuffle")
-        await self.coordinator.async_refresh()

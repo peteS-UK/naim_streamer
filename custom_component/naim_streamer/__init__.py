@@ -1,14 +1,17 @@
-from .naim_streamer_client import NaimStreamerClient
-
 from homeassistant import config_entries, core
 from homeassistant.const import Platform
 
-from .const import (
-    DOMAIN,
-)
+from .coordinator import StreamerDataUpdateCoordinator
+
+# from . import StreamerData, StreamerConfigEntry
+
+from .const import DOMAIN
 
 import logging
 
+
+from dataclasses import dataclass
+from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -16,29 +19,31 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.MEDIA_PLAYER]
 
 
+@dataclass
+class StreamerData:
+    """Streamer data class."""
+
+    coordinator: StreamerDataUpdateCoordinator
+
+
+type StreamerConfigEntry = ConfigEntry[StreamerData]
+
+
 async def async_setup_entry(
-    hass: core.HomeAssistant, entry: config_entries.ConfigEntry
+    hass: core.HomeAssistant, config_entry: StreamerConfigEntry
 ) -> bool:
     """Set up platform from a ConfigEntry."""
 
     hass.data.setdefault(DOMAIN, {})
-    hass_data = dict(entry.data)
-    hass.data[DOMAIN][entry.entry_id] = hass_data
+    hass_data = dict(config_entry.data)
+    hass.data[DOMAIN][config_entry.entry_id] = hass_data
 
-    client = NaimStreamerClient(
-        name=hass_data["name"],
-        udn=hass_data["udn"],
-        manufacturer=hass_data["manufacturer"],
-        model=hass_data["model"],
-        port=hass_data["port"],
-        rendering_control_url=hass_data["rendering_control_url"],
-        av_transport_url=hass_data["av_transport_url"],
-        connection_manager_url=hass_data["connection_manager_url"],
-    )
+    coordinator = StreamerDataUpdateCoordinator(hass, config_entry)
 
-    hass_data[DOMAIN] = client
+    config_entry.runtime_data = StreamerData(coordinator=coordinator)
+    await coordinator.async_config_entry_first_refresh()
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
 
     return True
 

@@ -8,7 +8,8 @@
                     "broadlink_remote": "Include Broadlink Remote commands?",
                     "broadlink_entity": "Broadlink Entity",
                     "manufacturer": "Manufacturer",
-                    "model": "Model"
+                    "model": "Model",
+                    "port": "Port of the streamer"
                 },
                 "title": "Add {name}?",
                 "description": "Do you want to add the discovered device {name} to Home Assistant?"
@@ -20,7 +21,8 @@
                     "broadlink_remote": "Include Broadlink Remote commands?",
                     "broadlink_entity": "Broadlink Entity",
                     "manufacturer": "Manufacturer",
-                    "model": "Model"
+                    "model": "Model",
+                    "port": "Port of the streamer"
                 },
                 "title": "Add Naim Streamer"
             }
