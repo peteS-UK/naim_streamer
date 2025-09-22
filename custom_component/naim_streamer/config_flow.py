@@ -6,12 +6,27 @@ import xml.etree.ElementTree as ET
 
 import aiohttp
 from homeassistant import config_entries
-from homeassistant.const import CONF_HOST
+from homeassistant.const import (
+    CONF_HOST,
+    CONF_NAME,
+    ATTR_MANUFACTURER,
+    CONF_MODEL,
+    CONF_PORT,
+)
 from homeassistant.data_entry_flow import FlowResult
 
 from homeassistant.helpers import config_validation as cv
 
-from .const import DOMAIN
+from homeassistant.helpers.selector import EntitySelector, EntitySelectorConfig
+
+from .const import (
+    DOMAIN,
+    CONF_BROADLINK,
+    CONF_RENDERING_CONTROL_URL,
+    CONF_AV_TRANSPORT_URL,
+    CONF_CONNECTION_MANAGER_URL,
+)
+
 
 import voluptuous as vol
 
@@ -22,8 +37,34 @@ _LOGGER = logging.getLogger(__name__)
 NDX_SCHEMA = vol.Schema({vol.Required(CONF_HOST): cv.string})
 
 
-class NaimNDXConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+CONFIG_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_NAME): cv.string,
+        vol.Required(CONF_HOST): cv.string,
+        vol.Required(CONF_PORT): cv.string,
+        vol.Required(ATTR_MANUFACTURER): cv.string,
+        vol.Required(CONF_MODEL): cv.string,
+        vol.Optional(
+            "broadlink_remote",
+            default=False,
+        ): cv.boolean,
+        vol.Optional(CONF_BROADLINK): EntitySelector(
+            EntitySelectorConfig(
+                filter={"integration": "broadlink", "domain": "remote"}
+            )
+        ),
+    }
+)
+
+
+class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Naim NDX."""
+
+    friendly_name = ""
+    host = ""
+    manufacturer = ""
+    model = ""
+    port = 8080
 
     VERSION = 1
 
@@ -32,11 +73,37 @@ class NaimNDXConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Manual setup."""
         if user_input is not None:
-            return self.async_create_entry(title=user_input[CONF_HOST], data=user_input)
+            extras = {}
+            extras[CONF_RENDERING_CONTROL_URL] = (
+                f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}/RenderingControl/ctrl"
+            )
+            extras[CONF_AV_TRANSPORT_URL] = (
+                f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}/AVTransport/ctrl"
+            )
+            extras[CONF_CONNECTION_MANAGER_URL] = (
+                f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}/ConnectionManager/ctrl"
+            )
+            extras["udn"] = (
+                "naim_streamer_"
+                + user_input[CONF_NAME].replace(" ", "_").replace("-", "_").lower()
+            )
+            return self.async_create_entry(
+                title=user_input[CONF_HOST], data=user_input | extras
+            )
 
         return self.async_show_form(
             step_id="user",
-            data_schema=NDX_SCHEMA,
+            data_schema=self.add_suggested_values_to_schema(
+                CONFIG_SCHEMA,
+                {
+                    CONF_NAME: self.friendly_name or "Naim Streamer",
+                    CONF_HOST: self.host,
+                    CONF_PORT: self.port or 8080,
+                    ATTR_MANUFACTURER: self.manufacturer or "Naim Audio Ltd.",
+                    CONF_MODEL: self.model or "NDX",
+                    "broadlink_remote": False,
+                },
+            ),
         )
 
     async def async_step_ssdp(self, discovery_info: dict[str, Any]) -> FlowResult:
@@ -44,18 +111,20 @@ class NaimNDXConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         location = discovery_info.upnp.get("ssdp_location")
         udn = discovery_info.upnp.get("UDN")
-        friendly_name = discovery_info.upnp.get("friendlyName")
+        self.friendly_name = discovery_info.upnp.get("friendlyName")
         presentation_url = discovery_info.upnp.get("presentationURL")
+        self.manufacturer = discovery_info.upnp.get("manufacturer")
+        self.model = discovery_info.upnp.get("model")
 
         # Extract host from LOCATION
-        host = None
+        self.host = None
         if location:
             parsed = urlparse(location)
-            host = parsed.hostname
+            self.host = parsed.hostname
         elif presentation_url:
             parsed = urlparse(presentation_url)
-            host = parsed.hostname
-            location = f"http://{host}:8080/description.xml"
+            self.host = parsed.hostname
+            location = f"http://{self.host}:{self.port}/description.xml"
 
         # Set unique ID to avoid duplicates
         await self.async_set_unique_id(udn)
@@ -92,42 +161,51 @@ class NaimNDXConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             except Exception as e:
                 # Log but don't abort discovery
-                _LOGGER.critical("Failed to fetch/parse NDX description: %s", e)
+                _LOGGER.critical("Failed to fetch/parse streamer description: %s", e)
 
         self.context["title_placeholders"] = {
-            "name": friendly_name or host or "Naim NDX"
+            "name": self.friendly_name or self.host or "Naim Streamer"
         }
 
         self.data = {
-            CONF_HOST: host,
+            CONF_NAME: self.friendly_name or "Naim Streamer",
+            CONF_HOST: self.host,
             "udn": udn,
-            "friendly_name": friendly_name,
+            "friendly_name": self.friendly_name,
+            ATTR_MANUFACTURER: self.manufacturer,
+            CONF_MODEL: self.model,
+            CONF_PORT: self.port,
             **control_urls,
         }
-
-        # Create config entry with all details
-        # return self.async_create_entry(
-        #    title=friendly_name or host or "Naim NDX",
-        #    data={
-        #        CONF_HOST: host,
-        #        "udn": udn,
-        #        "friendly_name": friendly_name,
-        #        **control_urls,
-        #    },
-        # )
 
         return await self.async_step_confirm()
 
     async def async_step_confirm(self, user_input=None):
         """Ask user to confirm adding the device."""
         if user_input is not None:
+            extras = {
+                CONF_RENDERING_CONTROL_URL: self.data[CONF_RENDERING_CONTROL_URL],
+                CONF_AV_TRANSPORT_URL: self.data[CONF_AV_TRANSPORT_URL],
+                CONF_CONNECTION_MANAGER_URL: self.data[CONF_CONNECTION_MANAGER_URL],
+                "udn": self.data["udn"],
+            }
+
             return self.async_create_entry(
                 title=self.context["title_placeholders"]["name"],
-                data=self.data,
+                data=user_input | extras,
             )
 
         return self.async_show_form(
             step_id="confirm",
-            data_schema=vol.Schema({}),
+            data_schema=self.add_suggested_values_to_schema(
+                CONFIG_SCHEMA,
+                {
+                    CONF_NAME: self.friendly_name or "Naim Streamer",
+                    CONF_HOST: self.host,
+                    CONF_PORT: self.port or 8080,
+                    ATTR_MANUFACTURER: self.manufacturer or "Naim Audio Ltd.",
+                    CONF_MODEL: self.model or "NDX",
+                },
+            ),
             description_placeholders=self.context["title_placeholders"],
         )

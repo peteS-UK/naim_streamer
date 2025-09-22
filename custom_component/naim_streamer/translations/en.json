@@ -2,8 +2,27 @@
     "config": {
         "step": {
             "confirm": {
+                "data": {
+                    "host": "IP Address of the streamer",
+                    "name": "Name of the streamer",
+                    "broadlink_remote": "Include Broadlink Remote commands?",
+                    "broadlink_entity": "Broadlink Entity",
+                    "manufacturer": "Manufacturer",
+                    "model": "Model"
+                },
                 "title": "Add {name}?",
                 "description": "Do you want to add the discovered device {name} to Home Assistant?"
+            },
+            "user": {
+                "data": {
+                    "host": "IP Address of the streamer",
+                    "name": "Name of the streamer",
+                    "broadlink_remote": "Include Broadlink Remote commands?",
+                    "broadlink_entity": "Broadlink Entity",
+                    "manufacturer": "Manufacturer",
+                    "model": "Model"
+                },
+                "title": "Add Naim Streamer"
             }
         }
     }

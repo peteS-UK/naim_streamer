@@ -1,6 +1,6 @@
 {
-    "domain": "naim_ndx",
-    "name": "Naim NDX",
+    "domain": "naim_streamer",
+    "name": "Naim Streamer",
     "config_flow": true,
     "dependencies": [
         "ssdp"
@@ -8,6 +8,9 @@
     "codeowners": [
         "@peteS-UK"
     ],
+    "documentation": "https://github.com/peteS-UK/naim_streamer/blob/main/README.md",
+    "iot_class": "local_polling",
+    "issue_tracker": "https://github.com/peteS-UK/naim_streamer/issues",
     "ssdp": [
         {
             "st": "urn:schemas-upnp-org:device:MediaRenderer:1",

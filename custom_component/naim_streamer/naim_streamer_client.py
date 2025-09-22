@@ -8,18 +8,48 @@ import xml.etree.ElementTree as ET
 _LOGGER = logging.getLogger(__name__)
 
 
-class NaimNDXClient:
-    """Async SOAP client for Naim NDX RenderingControl + AVTransport + ConnectionManager."""
+class NaimStreamerClient:
+    """Async SOAP client & IR for Naim Streamers."""
 
     def __init__(
         self,
+        name: str,
+        udn: str,
+        manufacturer: str,
+        model: str,
+        port: int,
         rendering_control_url: str,
         av_transport_url: str,
         connection_manager_url: str,
     ):
+        self._name = name
+        self._udn = udn
+        self._manufacturer = manufacturer
+        self._model = model
+        self._port = port
         self._rendering_control_url = rendering_control_url
         self._av_transport_url = av_transport_url
         self._connection_manager_url = connection_manager_url
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def udn(self):
+        return self._udn
+
+    @property
+    def manufacturer(self):
+        return self._manufacturer
+
+    @property
+    def model(self):
+        return self._model
+
+    @property
+    def port(self):
+        return self._port
 
     @staticmethod
     def parse_soap_response(xml_string: str, tags: list[str]) -> dict[str, str]:
@@ -64,7 +94,6 @@ class NaimNDXClient:
             return None
 
     # ---------------- RenderingControl ----------------
-
     async def get_mute(
         self, instance_id: int = 0, channel: str = "Master", parsed: bool = True
     ):
@@ -94,6 +123,185 @@ class NaimNDXClient:
         return (
             self.parse_soap_response(raw, ["CurrentVolume"]) if parsed and raw else raw
         )
+
+    async def set_mute(
+        self,
+        desired_mute: bool,
+        instance_id: int = 0,
+        channel: str = "Master",
+        parsed: bool = False,
+    ):
+        body = f"""
+<u:SetMute xmlns:u="urn:schemas-upnp-org:service:RenderingControl:1">
+  <InstanceID>{instance_id}</InstanceID>
+  <Channel>{channel}</Channel>
+  <DesiredMute>{"1" if desired_mute else "0"}</DesiredMute>
+</u:SetMute>"""
+        raw = await self._soap_request(
+            self._rendering_control_url,
+            "urn:schemas-upnp-org:service:RenderingControl:1",
+            "SetMute",
+            body,
+        )
+        return {"success": bool(raw and "Fault" not in raw)} if parsed else raw
+
+    async def set_volume(
+        self,
+        volume: int,
+        instance_id: int = 0,
+        channel: str = "Master",
+        parsed: bool = False,
+    ):
+        body = f"""
+<u:SetVolume xmlns:u="urn:schemas-upnp-org:service:RenderingControl:1">
+  <InstanceID>{instance_id}</InstanceID>
+  <Channel>{channel}</Channel>
+  <DesiredVolume>{volume}</DesiredVolume>
+</u:SetVolume>"""
+        raw = await self._soap_request(
+            self._rendering_control_url,
+            "urn:schemas-upnp-org:service:RenderingControl:1",
+            "SetVolume",
+            body,
+        )
+        return {"success": bool(raw and "Fault" not in raw)} if parsed else raw
+
+    async def set_av_transport_uri(
+        self, uri: str, instance_id: int = 0, metadata: str = "", parsed: bool = False
+    ):
+        body = f"""
+<u:SetAVTransportURI xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+  <InstanceID>{instance_id}</InstanceID>
+  <CurrentURI>{uri}</CurrentURI>
+  <CurrentURIMetaData>{metadata}</CurrentURIMetaData>
+</u:SetAVTransportURI>"""
+        raw = await self._soap_request(
+            self._av_transport_url,
+            "urn:schemas-upnp-org:service:AVTransport:1",
+            "SetAVTransportURI",
+            body,
+        )
+        return {"success": bool(raw and "Fault" not in raw)} if parsed else raw
+
+    async def set_next_av_transport_uri(
+        self, uri: str, instance_id: int = 0, metadata: str = "", parsed: bool = False
+    ):
+        body = f"""
+<u:SetNextAVTransportURI xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+  <InstanceID>{instance_id}</InstanceID>
+  <NextURI>{uri}</NextURI>
+  <NextURIMetaData>{metadata}</NextURIMetaData>
+</u:SetNextAVTransportURI>"""
+        raw = await self._soap_request(
+            self._av_transport_url,
+            "urn:schemas-upnp-org:service:AVTransport:1",
+            "SetNextAVTransportURI",
+            body,
+        )
+        return {"success": bool(raw and "Fault" not in raw)} if parsed else raw
+
+    async def play(self, instance_id: int = 0, speed: str = "1", parsed: bool = False):
+        body = f"""
+<u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+  <InstanceID>{instance_id}</InstanceID>
+  <Speed>{speed}</Speed>
+</u:Play>"""
+        raw = await self._soap_request(
+            self._av_transport_url,
+            "urn:schemas-upnp-org:service:AVTransport:1",
+            "Play",
+            body,
+        )
+        return {"success": bool(raw and "Fault" not in raw)} if parsed else raw
+
+    async def stop(self, instance_id: int = 0, parsed: bool = False):
+        body = f"""
+<u:Stop xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+  <InstanceID>{instance_id}</InstanceID>
+</u:Stop>"""
+        raw = await self._soap_request(
+            self._av_transport_url,
+            "urn:schemas-upnp-org:service:AVTransport:1",
+            "Stop",
+            body,
+        )
+        return {"success": bool(raw and "Fault" not in raw)} if parsed else raw
+
+    async def pause(self, instance_id: int = 0, parsed: bool = False):
+        body = f"""
+<u:Pause xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+  <InstanceID>{instance_id}</InstanceID>
+</u:Pause>"""
+        raw = await self._soap_request(
+            self._av_transport_url,
+            "urn:schemas-upnp-org:service:AVTransport:1",
+            "Pause",
+            body,
+        )
+        return {"success": bool(raw and "Fault" not in raw)} if parsed else raw
+
+    async def seek(
+        self,
+        instance_id: int = 0,
+        unit: str = "REL_TIME",
+        target: str = "00:00:00",
+        parsed: bool = False,
+    ):
+        body = f"""
+<u:Seek xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+  <InstanceID>{instance_id}</InstanceID>
+  <Unit>{unit}</Unit>
+  <Target>{target}</Target>
+</u:Seek>"""
+        raw = await self._soap_request(
+            self._av_transport_url,
+            "urn:schemas-upnp-org:service:AVTransport:1",
+            "Seek",
+            body,
+        )
+        return {"success": bool(raw and "Fault" not in raw)} if parsed else raw
+
+    async def next(self, instance_id: int = 0, parsed: bool = False):
+        body = f"""
+<u:Next xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+  <InstanceID>{instance_id}</InstanceID>
+</u:Next>"""
+        raw = await self._soap_request(
+            self._av_transport_url,
+            "urn:schemas-upnp-org:service:AVTransport:1",
+            "Next",
+            body,
+        )
+        return {"success": bool(raw and "Fault" not in raw)} if parsed else raw
+
+    async def previous(self, instance_id: int = 0, parsed: bool = False):
+        body = f"""
+<u:Previous xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+  <InstanceID>{instance_id}</InstanceID>
+</u:Previous>"""
+        raw = await self._soap_request(
+            self._av_transport_url,
+            "urn:schemas-upnp-org:service:AVTransport:1",
+            "Previous",
+            body,
+        )
+        return {"success": bool(raw and "Fault" not in raw)} if parsed else raw
+
+    async def set_play_mode(
+        self, instance_id: int = 0, play_mode: str = "NORMAL", parsed: bool = False
+    ):
+        body = f"""
+<u:SetPlayMode xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+  <InstanceID>{instance_id}</InstanceID>
+  <NewPlayMode>{play_mode}</NewPlayMode>
+</u:SetPlayMode>"""
+        raw = await self._soap_request(
+            self._av_transport_url,
+            "urn:schemas-upnp-org:service:AVTransport:1",
+            "SetPlayMode",
+            body,
+        )
+        return {"success": bool(raw and "Fault" not in raw)} if parsed else raw
 
     # ---------------- AVTransport ----------------
 
