@@ -63,6 +63,7 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
     def __init__(
         self, coordinator: StreamerDataUpdateCoordinator, hass: core.HomeAssistant
     ):
+        super().__init__(coordinator)
         self._streamer = coordinator.streamer
         self._hass = hass
         self._state = MediaPlayerState.IDLE
