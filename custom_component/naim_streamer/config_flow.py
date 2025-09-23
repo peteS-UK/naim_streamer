@@ -25,6 +25,7 @@ from .const import (
     CONF_RENDERING_CONTROL_URL,
     CONF_AV_TRANSPORT_URL,
     CONF_CONNECTION_MANAGER_URL,
+    CONF_BROADLINK_REMOTE,
 )
 
 
@@ -45,7 +46,7 @@ CONFIG_SCHEMA = vol.Schema(
         vol.Required(ATTR_MANUFACTURER): cv.string,
         vol.Required(CONF_MODEL): cv.string,
         vol.Optional(
-            "broadlink_remote",
+            CONF_BROADLINK_REMOTE,
             default=False,
         ): cv.boolean,
         vol.Optional(CONF_BROADLINK): EntitySelector(
@@ -72,24 +73,36 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Manual setup."""
+        errors: dict[str, str] = {}
         if user_input is not None:
-            extras = {}
-            extras[CONF_RENDERING_CONTROL_URL] = (
-                f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}/RenderingControl/ctrl"
-            )
-            extras[CONF_AV_TRANSPORT_URL] = (
-                f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}/AVTransport/ctrl"
-            )
-            extras[CONF_CONNECTION_MANAGER_URL] = (
-                f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}/ConnectionManager/ctrl"
-            )
-            extras["udn"] = (
-                "naim_streamer_"
-                + user_input[CONF_NAME].replace(" ", "_").replace("-", "_").lower()
-            )
-            return self.async_create_entry(
-                title=user_input[CONF_HOST], data=user_input | extras
-            )
+            try:
+                await self.validate_remote(user_input)
+            except ValueError:
+                errors["base"] = "data"
+            if not errors:
+                extras = {}
+                extras[CONF_RENDERING_CONTROL_URL] = (
+                    f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}/RenderingControl/ctrl"
+                )
+                extras[CONF_AV_TRANSPORT_URL] = (
+                    f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}/AVTransport/ctrl"
+                )
+                extras[CONF_CONNECTION_MANAGER_URL] = (
+                    f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}/ConnectionManager/ctrl"
+                )
+                extras["udn"] = (
+                    "naim_streamer_"
+                    + user_input[CONF_NAME].replace(" ", "_").replace("-", "_").lower()
+                )
+                extras["rendering_control_event_url"] = (
+                    f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}//RenderingControl/evt"
+                )
+                extras["av_transport_event_url"] = (
+                    f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}//AVTransport/evt"
+                )
+                return self.async_create_entry(
+                    title=user_input[CONF_HOST], data=user_input | extras
+                )
 
         return self.async_show_form(
             step_id="user",
@@ -104,6 +117,7 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "broadlink_remote": False,
                 },
             ),
+            errors=errors,
         )
 
     async def async_step_ssdp(self, discovery_info: dict[str, Any]) -> FlowResult:
@@ -116,7 +130,7 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.manufacturer = discovery_info.upnp.get("manufacturer")
         self.model = discovery_info.upnp.get("model")
 
-        # Extract host from LOCATION
+        # Extract host from LOCATION or presentationURL
         self.host = None
         if location:
             parsed = urlparse(location)
@@ -130,8 +144,7 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(udn)
         self._abort_if_unique_id_configured()
 
-        # Fetch and parse device description XML
-        control_urls = {}
+        control_urls: dict[str, str] = {}
         if location:
             try:
                 async with aiohttp.ClientSession() as session:
@@ -141,7 +154,6 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 root = ET.fromstring(xml_text)
                 ns = {"upnp": "urn:schemas-upnp-org:device-1-0"}
 
-                # Find all services
                 for service in root.findall(".//upnp:service", ns):
                     service_type = service.findtext(
                         "upnp:serviceType", default="", namespaces=ns
@@ -149,18 +161,37 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     control_url = service.findtext(
                         "upnp:controlURL", default="", namespaces=ns
                     )
+                    event_url = service.findtext(
+                        "upnp:eventSubURL", default="", namespaces=ns
+                    )
+
+                    _LOGGER.debug(
+                        "Found service: %s controlURL=%s eventSubURL=%s",
+                        service_type,
+                        control_url,
+                        event_url,
+                    )
 
                     if service_type and control_url:
-                        abs_url = urljoin(location, control_url)
+                        abs_ctrl_url = urljoin(location, control_url)
+                        abs_event_url = (
+                            urljoin(location, event_url) if event_url else None
+                        )
+
                         if "RenderingControl" in service_type:
-                            control_urls["rendering_control_url"] = abs_url
+                            control_urls["rendering_control_url"] = abs_ctrl_url
+                            if abs_event_url:
+                                control_urls["rendering_control_event_url"] = (
+                                    abs_event_url
+                                )
                         elif "AVTransport" in service_type:
-                            control_urls["av_transport_url"] = abs_url
+                            control_urls["av_transport_url"] = abs_ctrl_url
+                            if abs_event_url:
+                                control_urls["av_transport_event_url"] = abs_event_url
                         elif "ConnectionManager" in service_type:
-                            control_urls["connection_manager_url"] = abs_url
+                            control_urls["connection_manager_url"] = abs_ctrl_url
 
             except Exception as e:
-                # Log but don't abort discovery
                 _LOGGER.critical("Failed to fetch/parse streamer description: %s", e)
 
         self.context["title_placeholders"] = {
@@ -178,22 +209,46 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             **control_urls,
         }
 
+        _LOGGER.debug("SSDP discovery data prepared: %s", self.data)
+
         return await self.async_step_confirm()
+
+    async def validate_remote(self, data: dict) -> None:
+        if CONF_BROADLINK_REMOTE not in data.keys():
+            data[CONF_BROADLINK_REMOTE] = False
+
+        if CONF_BROADLINK not in data.keys():
+            data[CONF_BROADLINK] = ""
+
+        if (len(data[CONF_BROADLINK]) < 2) and (data[CONF_BROADLINK_REMOTE]):
+            # Manual entry requires host and name
+            raise ValueError
 
     async def async_step_confirm(self, user_input=None):
         """Ask user to confirm adding the device."""
+        errors: dict[str, str] = {}
         if user_input is not None:
-            extras = {
-                CONF_RENDERING_CONTROL_URL: self.data[CONF_RENDERING_CONTROL_URL],
-                CONF_AV_TRANSPORT_URL: self.data[CONF_AV_TRANSPORT_URL],
-                CONF_CONNECTION_MANAGER_URL: self.data[CONF_CONNECTION_MANAGER_URL],
-                "udn": self.data["udn"],
-            }
+            try:
+                await self.validate_remote(user_input)
+            except ValueError:
+                errors["base"] = "data"
+            if not errors:
+                # Input is valid, set data.
+                extras = {
+                    CONF_RENDERING_CONTROL_URL: self.data[CONF_RENDERING_CONTROL_URL],
+                    CONF_AV_TRANSPORT_URL: self.data[CONF_AV_TRANSPORT_URL],
+                    CONF_CONNECTION_MANAGER_URL: self.data[CONF_CONNECTION_MANAGER_URL],
+                    "udn": self.data["udn"],
+                    "rendering_control_event_url": self.data.get(
+                        "rendering_control_event_url"
+                    ),
+                    "av_transport_event_url": self.data.get("av_transport_event_url"),
+                }
 
-            return self.async_create_entry(
-                title=self.context["title_placeholders"]["name"],
-                data=user_input | extras,
-            )
+                return self.async_create_entry(
+                    title=self.context["title_placeholders"]["name"],
+                    data=user_input | extras,
+                )
 
         return self.async_show_form(
             step_id="confirm",
@@ -208,4 +263,5 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 },
             ),
             description_placeholders=self.context["title_placeholders"],
+            errors=errors,
         )

@@ -1,5 +1,8 @@
 {
     "config": {
+        "error": {
+            "data": "You must select a Broadlink remote entity"
+        },
         "step": {
             "confirm": {
                 "data": {

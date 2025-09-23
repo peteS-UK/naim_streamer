@@ -18,6 +18,8 @@
             "modelName": "NDX"
         }
     ],
-    "requirements": [],
+    "requirements": [
+        "lxml>=4.9.0"
+    ],
     "version": "0.1"
 }

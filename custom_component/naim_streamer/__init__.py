@@ -35,8 +35,8 @@ async def async_setup_entry(
     """Set up platform from a ConfigEntry."""
 
     hass.data.setdefault(DOMAIN, {})
-    hass_data = dict(config_entry.data)
-    hass.data[DOMAIN][config_entry.entry_id] = hass_data
+    # hass_data = dict(config_entry.data)
+    # hass.data[DOMAIN][config_entry.entry_id] = hass_data
 
     coordinator = StreamerDataUpdateCoordinator(hass, config_entry)
 
@@ -52,5 +52,12 @@ async def async_unload_entry(
     hass: core.HomeAssistant, entry: config_entries.ConfigEntry
 ) -> bool:
     """Unload a config entry."""
+
+    # Get the coordinator from runtime_data
+    coordinator: StreamerDataUpdateCoordinator = entry.runtime_data.coordinator
+
+    # Cleanly unsubscribe from UPnP events and stop the local server
+    await coordinator.async_unload()
+
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     return unload_ok

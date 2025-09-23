@@ -5,6 +5,9 @@ CONF_BROADLINK = "broadlink_entity"
 CONF_RENDERING_CONTROL_URL = "rendering_control_url"
 CONF_AV_TRANSPORT_URL = "av_transport_url"
 CONF_CONNECTION_MANAGER_URL = "connection_manager_url"
+CONF_BROADLINK_REMOTE = "broadlink_remote"
+
+SOURCES = ("CD", "Radio", "PC", "iPod", "TV", "AV", "HDD", "Aux")
 
 BROADLINK_COMMANDS = {
     "disp": "JgAsADkgGj04Pjc+OB8cIBo8GiAcIBsAC2U3IBs+Nz06OzkgGiAbPRsfGyAbAA0FAAAAAAAAAAAAAAAA",

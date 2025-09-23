@@ -4,6 +4,13 @@ from typing import Optional
 
 import xml.etree.ElementTree as ET
 
+import mimetypes
+from urllib.parse import urlparse
+
+from homeassistant.components.media_player import (
+    MediaPlayerState,
+)
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,6 +28,7 @@ class NaimStreamerClient:
         rendering_control_url: str,
         av_transport_url: str,
         connection_manager_url: str,
+        host: str = None,
     ):
         self._name = name
         self._udn = udn
@@ -30,6 +38,161 @@ class NaimStreamerClient:
         self._rendering_control_url = rendering_control_url
         self._av_transport_url = av_transport_url
         self._connection_manager_url = connection_manager_url
+        self.host = host
+        self.last_uri = None
+        self.last_metadata = None
+        self.state = MediaPlayerState.IDLE
+        self.status = ""
+
+    async def subscribe_service(
+        self, event_url: str, callback_url: str, timeout: int = 300
+    ) -> str:
+        """
+        Subscribe to a UPnP event service.
+
+        :param event_url: Absolute eventSubURL for the service (e.g. http://host:port/AVTransport/evt)
+        :param callback_url: Absolute URL of our local NOTIFY handler
+        :param timeout: Subscription timeout in seconds (default 300)
+        :return: SID string from the device
+        """
+        headers = {
+            "CALLBACK": f"<{callback_url}>",
+            "NT": "upnp:event",
+            "TIMEOUT": f"Second-{timeout}",
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.request("SUBSCRIBE", event_url, headers=headers) as resp:
+                _LOGGER.debug(
+                    "SUBSCRIBE %s returned %s headers=%s",
+                    event_url,
+                    resp.status,
+                    resp.headers,
+                )
+                if resp.status != 200:
+                    raise Exception(f"SUBSCRIBE failed ({resp.status}) for {event_url}")
+                sid = resp.headers.get("SID")
+                if not sid:
+                    raise Exception(f"No SID returned for {event_url}")
+                _LOGGER.debug("Subscribed to %s with SID %s", event_url, sid)
+                return sid
+
+    async def renew_subscription(
+        self, event_url: str, sid: str, timeout: int = 300
+    ) -> str:
+        """
+        Renew an existing UPnP event subscription.
+
+        :param event_url: Absolute eventSubURL for the service
+        :param sid: Subscription ID to renew
+        :param timeout: Subscription timeout in seconds
+        :return: New SID (may be same as old)
+        """
+        headers = {
+            "SID": sid,
+            "TIMEOUT": f"Second-{timeout}",
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.request("SUBSCRIBE", event_url, headers=headers) as resp:
+                if resp.status != 200:
+                    raise Exception(f"Renew failed ({resp.status}) for {event_url}")
+                new_sid = resp.headers.get("SID", sid)
+                _LOGGER.debug("Renewed subscription %s -> %s", sid, new_sid)
+                return new_sid
+
+    async def has_current_uri(self) -> bool:
+        """Return True if the transport has a non-empty CurrentURI."""
+        info = await self.get_media_info(parsed=True)
+        return bool(info.get("CurrentURI"))
+
+    async def seek(self, position_seconds: int, parsed: bool = False):
+        """Seek to a position in the current track."""
+        hours = position_seconds // 3600
+        minutes = (position_seconds % 3600) // 60
+        seconds = position_seconds % 60
+        target = f"{hours:02}:{minutes:02}:{seconds:02}"
+
+        _LOGGER.debug("Seeking to %s (REL_TIME)", target)
+        raw = await self._soap_request(
+            service="AVTransport",
+            action="Seek",
+            arguments={
+                "InstanceID": 0,
+                "Unit": "REL_TIME",
+                "Target": target,
+            },
+        )
+        return {"success": bool(raw and "Fault" not in raw)} if parsed else raw
+
+    async def seekold(
+        self,
+        instance_id: int = 0,
+        unit: str = "REL_TIME",
+        target: str = "00:00:00",
+        parsed: bool = False,
+    ):
+        body = f"""
+<u:Seek xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+  <InstanceID>{instance_id}</InstanceID>
+  <Unit>{unit}</Unit>
+  <Target>{target}</Target>
+</u:Seek>"""
+        raw = await self._soap_request(
+            self._av_transport_url,
+            "urn:schemas-upnp-org:service:AVTransport:1",
+            "Seek",
+            body,
+        )
+        return {"success": bool(raw and "Fault" not in raw)} if parsed else raw
+
+    async def play_url(
+        self,
+        uri: str,
+        title: str = "",
+        artist: str = "",
+        album: str = "",
+        album_art: str = "",
+    ):
+        """Set the transport to a given URL and start playback."""
+        # Guess protocolInfo from extension or MIME type
+        mime_type, _ = mimetypes.guess_type(uri)
+        if not mime_type:
+            # Fallback for common stream types
+            if uri.lower().endswith(".aac") or "stationstream" in uri:
+                mime_type = "audio/x-mpeg-aac"
+            elif uri.lower().endswith(".mp3"):
+                mime_type = "audio/mpeg"
+            elif uri.lower().endswith(".flac"):
+                mime_type = "audio/x-flac"
+            else:
+                mime_type = "*/*"
+
+        protocol_info = f"http-get:*:{mime_type}:*"
+
+        # Auto-fill title from filename if not provided
+        if not title:
+            path = urlparse(uri).path
+            title = path.split("/")[-1] or "Unknown"
+
+        # Build minimal DIDL-Lite metadata
+        didl = f"""<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/"
+            xmlns:dc="http://purl.org/dc/elements/1.1/"
+            xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">
+            <item>
+                <dc:title>{title}</dc:title>
+                {"<upnp:artist>" + artist + "</upnp:artist>" if artist else ""}
+                {"<upnp:album>" + album + "</upnp:album>" if album else ""}
+                {"<upnp:albumArtURI>" + album_art + "</upnp:albumArtURI>" if album_art else ""}
+                <res protocolInfo="{protocol_info}">{uri}</res>
+            </item>
+        </DIDL-Lite>"""
+
+        _LOGGER.debug("Setting AVTransport URI to %s with metadata:\n%s", uri, didl)
+        await self.set_av_transport_uri(uri, didl)
+        await self.play()
+
+        # Persist for resume
+        self.last_uri = uri
+        self.last_metadata = didl
 
     @property
     def name(self):
@@ -236,27 +399,6 @@ class NaimStreamerClient:
             self._av_transport_url,
             "urn:schemas-upnp-org:service:AVTransport:1",
             "Pause",
-            body,
-        )
-        return {"success": bool(raw and "Fault" not in raw)} if parsed else raw
-
-    async def seek(
-        self,
-        instance_id: int = 0,
-        unit: str = "REL_TIME",
-        target: str = "00:00:00",
-        parsed: bool = False,
-    ):
-        body = f"""
-<u:Seek xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
-  <InstanceID>{instance_id}</InstanceID>
-  <Unit>{unit}</Unit>
-  <Target>{target}</Target>
-</u:Seek>"""
-        raw = await self._soap_request(
-            self._av_transport_url,
-            "urn:schemas-upnp-org:service:AVTransport:1",
-            "Seek",
             body,
         )
         return {"success": bool(raw and "Fault" not in raw)} if parsed else raw
