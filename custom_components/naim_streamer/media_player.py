@@ -116,7 +116,7 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
             )
 
     async def _send_broadlink_command(self, command):
-        await self._hass.services.async_call(
+        await self.hass.services.async_call(
             "remote",
             "send_command",
             {
