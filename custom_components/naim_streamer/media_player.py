@@ -36,8 +36,6 @@ SUPPORT_STREAMER = (
     | MediaPlayerEntityFeature.PLAY
     | MediaPlayerEntityFeature.STOP
     | MediaPlayerEntityFeature.SELECT_SOURCE
-    | MediaPlayerEntityFeature.VOLUME_SET
-    | MediaPlayerEntityFeature.VOLUME_MUTE
     | MediaPlayerEntityFeature.SEEK
 )
 
