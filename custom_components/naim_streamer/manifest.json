@@ -16,6 +16,21 @@
             "st": "urn:schemas-upnp-org:device:MediaRenderer:1",
             "manufacturer": "Naim Audio Ltd.",
             "modelName": "NDX"
+        },
+        {
+            "st": "urn:schemas-upnp-org:device:MediaRenderer:1",
+            "manufacturer": "Naim Audio Ltd.",
+            "modelName": "NDX2"
+        },
+        {
+            "st": "urn:schemas-upnp-org:device:MediaRenderer:1",
+            "manufacturer": "Naim Audio Ltd.",
+            "modelName": "NDS"
+        },
+        {
+            "st": "urn:schemas-upnp-org:device:MediaRenderer:1",
+            "manufacturer": "Naim Audio Ltd.",
+            "modelName": "NDS2"
         }
     ],
     "requirements": [
