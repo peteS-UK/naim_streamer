@@ -9,14 +9,10 @@ from .const import DOMAIN
 
 import logging
 
-
 from dataclasses import dataclass
 from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
-
-
-PLATFORMS = [Platform.MEDIA_PLAYER]
 
 
 @dataclass
@@ -27,6 +23,9 @@ class StreamerData:
 
 
 type StreamerConfigEntry = ConfigEntry[StreamerData]
+
+
+PLATFORMS = []
 
 
 async def async_setup_entry(
@@ -42,6 +41,16 @@ async def async_setup_entry(
 
     config_entry.runtime_data = StreamerData(coordinator=coordinator)
     await coordinator.async_config_entry_first_refresh()
+
+    if config_entry.data.get("broadlink_entity"):
+        PLATFORMS = [
+            Platform.MEDIA_PLAYER,
+            Platform.BUTTON,
+        ]
+    else:
+        PLATFORMS = [
+            Platform.MEDIA_PLAYER,
+        ]
 
     await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
 
