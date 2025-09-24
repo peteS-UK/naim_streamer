@@ -197,4 +197,4 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
 
     async def async_select_source(self, source: str) -> None:
         if self._broadlink_entity:
-            await self._send_broadlink_command(source.lower())
+            await self.coordinator.async_send_command(source.lower())
