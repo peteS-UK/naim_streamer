@@ -2,25 +2,16 @@ from __future__ import annotations
 
 import logging
 
-import voluptuous as vol
 from homeassistant import core
 from homeassistant.components.media_player import (
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
     MediaPlayerState,
 )
-from homeassistant.helpers import (
-    config_validation as cv,
-    entity_platform,
-)
-
-from homeassistant.exceptions import ServiceValidationError
 
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import (
-    SERVICE_SEND_COMMAND,
-    BROADLINK_COMMANDS,
     SOURCES,
 )
 
@@ -62,16 +53,6 @@ async def async_setup_entry(
         [NaimStreamerDevice(coordinator=config_entry.runtime_data.coordinator)]
     )
 
-    # Register entity services
-    platform = entity_platform.async_get_current_platform()
-    platform.async_register_entity_service(
-        SERVICE_SEND_COMMAND,
-        {
-            vol.Required("command"): cv.string,
-        },
-        NaimStreamerDevice.send_command.__name__,
-    )
-
 
 class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
     # Representation of a Naim Streamer
@@ -92,40 +73,6 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
     @property
     def should_poll(self):
         return False
-
-    async def send_command(self, command):
-        if command == "play":
-            await self.async_media_play
-        elif command == "pause":
-            await self.async_media_pause
-        elif command == "stop":
-            await self.async_media_stop
-        elif command == "next":
-            await self.async_media_next_track
-        elif command == "previous":
-            await self.async_media_previous_track
-        elif command == "mute":
-            await self.async_mute_volume(True)
-        elif command == "unmute":
-            await self.async_mute_volume(False)
-        elif self._broadlink_entity:
-            await self._send_broadlink_command(command)
-        else:
-            raise ServiceValidationError(
-                f"{command} is only supported with a Broadlink remote"
-            )
-
-    async def _send_broadlink_command(self, command):
-        await self.hass.services.async_call(
-            "remote",
-            "send_command",
-            {
-                "entity_id": self._broadlink_entity,
-                "num_repeats": "1",
-                "delay_secs": "0.4",
-                "command": f"b64:{BROADLINK_COMMANDS[command]}",
-            },
-        )
 
     @property
     def extra_state_attributes(self):
@@ -183,37 +130,23 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
         return self.coordinator.data.get("state")
 
     async def async_media_play(self):
-        if self._broadlink_entity:
-            await self._send_broadlink_command("play")
-        else:
-            if not self._streamer.last_uri or self._streamer.status == "ERROR_OCCURRED":
-                uri = self.coordinator.data.get("media_uri") or self._streamer.last_uri
-                metadata = (
-                    self.coordinator.data.get("media_metadata")
-                    or self._streamer.last_metadata
-                )
-
-                if uri and metadata:
-                    _LOGGER.debug("Restoring AVTransport URI before play: %s", uri)
-                    await self._streamer.set_av_transport_uri(uri, metadata)
-                else:
-                    _LOGGER.warning("No stored URI/metadata to restore before play")
-
-            await self._streamer.play()
+        await self.coordinator.play()
 
     async def async_media_pause(self):
         """Pause and confirm."""
-        if self._broadlink_entity:
-            await self._send_broadlink_command("pause")
-        else:
-            await self._streamer.pause()
+        await self.coordinator.pause()
 
     async def async_media_stop(self):
         """Stop and confirm."""
-        if self._broadlink_entity:
-            await self._send_broadlink_command("stop")
-        else:
-            await self._streamer.stop()
+        await self.coordinator.stop()
+
+    async def async_media_next_track(self):
+        """Skip to the next track and confirm actual state."""
+        await self.coordinator.next_track()
+
+    async def async_media_previous_track(self):
+        """Skip to the previous track and confirm actual state."""
+        await self.coordinator.previous_track()
 
     async def async_set_volume_level(self, volume: float):
         """Set volume level and confirm."""
@@ -259,20 +192,6 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
     def media_duration(self) -> int | None:
         """Return the duration in seconds."""
         return self.coordinator.data.get("media_duration")
-
-    async def async_media_next_track(self):
-        """Skip to the next track and confirm actual state."""
-        if self._broadlink_entity:
-            await self._send_broadlink_command("next")
-        else:
-            await self._streamer.next()
-
-    async def async_media_previous_track(self):
-        """Skip to the previous track and confirm actual state."""
-        if self._broadlink_entity:
-            await self._send_broadlink_command("previous")
-        else:
-            await self._streamer.previous()
 
     async def async_media_seek(self, position: int):
         """Handle media_seek service calls (position in seconds)."""

@@ -19,10 +19,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.components.media_player import MediaPlayerState
 
+from homeassistant.exceptions import ServiceValidationError
+
 from .naim_streamer_client import NaimStreamerClient
 
 from aiohttp import ClientSession
 
+from .const import BROADLINK_COMMANDS
 
 TRANSPORT_TO_HA_STATE = {
     "STOPPED": MediaPlayerState.IDLE,
@@ -67,6 +70,86 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         self._site = None
         self.data = {}
         self.broadlink_entity = config_entry.data.get("broadlink_entity")
+
+    async def async_send_command(self, command):
+        if command == "play":
+            await self.async_play()
+        elif command == "pause":
+            await self.async_pause()
+        elif command == "stop":
+            await self.async_stop()
+        elif command == "next":
+            await self.async_next_track()
+        elif command == "previous":
+            await self.async_previous_track()
+        elif command == "mute":
+            await self.mute_volume(True)
+        elif command == "unmute":
+            await self.mute_volume(False)
+        elif self.broadlink_entity:
+            await self._send_broadlink_command(command)
+        else:
+            raise ServiceValidationError(
+                f"{command} is only supported with a Broadlink remote"
+            )
+
+    async def _send_broadlink_command(self, command):
+        await self.hass.services.async_call(
+            "remote",
+            "send_command",
+            {
+                "entity_id": self.broadlink_entity,
+                "num_repeats": "1",
+                "delay_secs": "0.4",
+                "command": f"b64:{BROADLINK_COMMANDS[command]}",
+            },
+        )
+
+    async def async_play(self):
+        if self.broadlink_entity:
+            await self._send_broadlink_command("play")
+        else:
+            if not self.streamer.last_uri or self.streamer.status == "ERROR_OCCURRED":
+                uri = self.data.get("media_uri") or self.streamer.last_uri
+                metadata = (
+                    self.data.get("media_metadata") or self.streamer.last_metadata
+                )
+
+                if uri and metadata:
+                    _LOGGER.debug("Restoring AVTransport URI before play: %s", uri)
+                    await self.streamer.set_av_transport_uri(uri, metadata)
+                else:
+                    _LOGGER.warning("No stored URI/metadata to restore before play")
+
+            await self.streamer.play()
+
+    async def async_pause(self):
+        """Pause and confirm."""
+        if self.broadlink_entity:
+            await self._send_broadlink_command("pause")
+        else:
+            await self.streamer.pause()
+
+    async def async_stop(self):
+        """Stop and confirm."""
+        if self.broadlink_entity:
+            await self._send_broadlink_command("stop")
+        else:
+            await self.streamer.stop()
+
+    async def async_next_track(self):
+        """Skip to the next track and confirm actual state."""
+        if self.broadlink_entity:
+            await self._send_broadlink_command("next")
+        else:
+            await self.streamer.next()
+
+    async def async_previous_track(self):
+        """Skip to the previous track and confirm actual state."""
+        if self.broadlink_entity:
+            await self._send_broadlink_command("previous")
+        else:
+            await self.streamer.previous()
 
     async def _async_setup(self):
         """Initialise client and subscribe to events."""
