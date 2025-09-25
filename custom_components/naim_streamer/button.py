@@ -48,16 +48,21 @@ STREAMER_BUTTON_ENTITIES: tuple[StreamerButtonEntityDescription, ...] = (
         icon="mdi:skip-previous",
         name="Previous",
     ),
-    #    StreamerButtonEntityDescription(
-    #        key="mute",
-    #        icon="mdi:volume-off",
-    #        name="Mute",
-    #    ),
-    #    StreamerButtonEntityDescription(
-    #        name="Unmute",
-    #        key="unmute",
-    #        icon="mdi:volume-high",
-    #    ),
+    StreamerButtonEntityDescription(
+        key="mute",
+        icon="mdi:volume-off",
+        name="Mute",
+    ),
+    StreamerButtonEntityDescription(
+        key="vol+",
+        icon="mdi:volume-plus",
+        name="Volume Up",
+    ),
+    StreamerButtonEntityDescription(
+        key="vol-",
+        icon="mdi:volume-minus",
+        name="Volume Down",
+    ),
     StreamerButtonEntityDescription(name="Display", key="disp"),
     StreamerButtonEntityDescription(name="One", key="one", icon="mdi:numeric-1"),
     StreamerButtonEntityDescription(name="Two", key="two", icon="mdi:numeric-2"),
