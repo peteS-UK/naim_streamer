@@ -82,10 +82,6 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
             await self.async_next_track()
         elif command == "previous":
             await self.async_previous_track()
-        elif command == "mute":
-            await self.mute_volume(True)
-        elif command == "unmute":
-            await self.mute_volume(False)
         elif self.broadlink_entity:
             await self._send_broadlink_command(command)
         else:
