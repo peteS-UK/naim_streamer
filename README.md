@@ -18,3 +18,7 @@ The preferred installation approach is via Home Assistant Community Store - aka 
 If you want to download the integration manually, create a new folder called naim_streamer under your custom_components folder in your config folder. If the custom_components folder doesn't exist, create it first. Once created, download the files and folders from the [github repo](https://github.com/peteS-UK/naim_streamer/tree/main/custom_components/naim_streamer) into this new naim_streamer folder.
 
 Once downloaded either via HACS or manually, restart your Home Assistant server.
+
+## Configuration
+
+The integration should discover your steamer automatically and list it in the Discovered list in the integration page. If it's not discovered automatically, for example if your network has multiple subnets, then you can manually add the integration. In either case, you're presented with a configuration page.
