@@ -81,7 +81,7 @@ STREAMER_BUTTON_ENTITIES: tuple[StreamerButtonEntityDescription, ...] = (
     StreamerButtonEntityDescription(
         name="Info", key="info", icon="mdi:information-box"
     ),
-    StreamerButtonEntityDescription(name="Setup", key="Setup"),
+    StreamerButtonEntityDescription(name="Setup", key="setup"),
     StreamerButtonEntityDescription(name="Rewind", key="rewind", icon="mdi:rewind"),
     StreamerButtonEntityDescription(
         name="Fast Forward", key="fastforward", icon="mdi:fast-forward"
