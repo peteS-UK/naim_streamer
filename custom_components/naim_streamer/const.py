@@ -1,11 +1,12 @@
 DOMAIN = "naim_streamer"
 DEFAULT_NAME = "Naim Streamer"
 SERVICE_SEND_COMMAND = "send_command"
-CONF_BROADLINK = "broadlink_entity"
+CONF_REMOTE_ENTITY = "remote_entity"
 CONF_RENDERING_CONTROL_URL = "rendering_control_url"
 CONF_AV_TRANSPORT_URL = "av_transport_url"
 CONF_CONNECTION_MANAGER_URL = "connection_manager_url"
 CONF_BROADLINK_REMOTE = "broadlink_remote"
+CONF_REMOTE_TYPE = "remote_type"
 
 SOURCES = ("CD", "Radio", "PC", "iPod", "TV", "AV", "HDD", "Aux")
 
