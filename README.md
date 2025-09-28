@@ -9,7 +9,7 @@ A simple media player to control Naim Streamers from Home Assistant.
 
 It's initially tested with NDX.
 
-The original NDX only provides a basic UpNP interface with play, pause, stop etc. support. Although the metadata is shown for all sources, the commands only work with the UPnP input. However, if you select a Broadlink remote during setup, all of the buttons from the remote are implemented and work across all inputs.
+The original NDX only provides a basic UpNP interface with play, pause, stop etc. support. Although the metadata is shown for all sources, the commands only work with the UPnP input. However, if you select a Broadlink or Tuya remote during setup, all of the buttons from the remote are implemented and work across all inputs.
 
 ## Installation
 
@@ -23,11 +23,11 @@ Once downloaded either via HACS or manually, restart your Home Assistant server.
 
 The integration should discover your steamer automatically and list it in the Discovered list in the integration page. If it's not discovered automatically, for example if your network has multiple subnets, then you can manually add the integration. In either case, you're presented with a configuration page.
 
-<img width="515" height="947" alt="image" src="https://github.com/user-attachments/assets/5a247b35-57ab-496a-b2a7-02bef2d67c6d" />
+<img width="501" height="942" alt="image" src="https://github.com/user-attachments/assets/e714ce66-1320-41f7-8e5c-44ac8c25bdbe" />
 
-## Broadlink Entity
+## Remote Entity
 
-The Naim streamers have no published API, and early devices such as the NDX have no API to properly control the device, other than a SOAP interface required for UPnP control.  As such, this integration is in two parts.  Firstly, it implements the UPnP interface for playback controls and to receive metadata and status information from the streamer.  Secondly, if you have a Broadlink remote device and you select it in the Configuration page, it implements all of the buttons from the remote control as buttons in Home Assistant.
+The Naim streamers have no published API, and early devices such as the NDX have no API to properly control the device, other than a SOAP interface required for UPnP control.  As such, this integration is in two parts.  Firstly, it implements the UPnP interface for playback controls and to receive metadata and status information from the streamer.  Secondly, if you have a remote ir blaster device and you select it in the Configuration page, it implements all of the buttons from the remote control as buttons in Home Assistant.
 
 ## Volume Control
 
