@@ -66,7 +66,7 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
         self._attr_unique_id = coordinator.uuid
         self._attr_name = None
         self._attr_has_entity_name = True
-        self._broadlink_entity = coordinator.broadlink_entity
+        self._broadlink_entity = coordinator.remote_entity
 
     @property
     def should_poll(self):

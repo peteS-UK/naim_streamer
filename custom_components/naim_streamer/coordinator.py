@@ -25,7 +25,12 @@ from .naim_streamer_client import NaimStreamerClient
 
 from aiohttp import ClientSession
 
-from .const import BROADLINK_COMMANDS
+from .const import (
+    BROADLINK_COMMANDS,
+    TUYA_COMMANDS,
+    CONF_REMOTE_ENTITY,
+    CONF_REMOTE_TYPE,
+)
 
 TRANSPORT_TO_HA_STATE = {
     "STOPPED": MediaPlayerState.IDLE,
@@ -69,7 +74,8 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         self._runner = None
         self._site = None
         self.data = {}
-        self.broadlink_entity = config_entry.data.get("broadlink_entity")
+        self.remote_entity = config_entry.data.get(CONF_REMOTE_ENTITY)
+        self.remote_type = config_entry.data.get(CONF_REMOTE_TYPE)
 
     async def async_send_command(self, command):
         if command == "play":
@@ -82,28 +88,52 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
             await self.async_next_track()
         elif command == "previous":
             await self.async_previous_track()
-        elif self.broadlink_entity:
-            await self._send_broadlink_command(command)
+        elif self.remote_entity:
+            await self._send_remote_command(command)
         else:
             raise ServiceValidationError(
-                f"{command} is only supported with a Broadlink remote"
+                f"{command} is only supported with a remote entity"
             )
 
-    async def _send_broadlink_command(self, command):
-        await self.hass.services.async_call(
-            "remote",
-            "send_command",
-            {
-                "entity_id": self.broadlink_entity,
-                "num_repeats": "1",
-                "delay_secs": "0.4",
-                "command": f"b64:{BROADLINK_COMMANDS[command]}",
-            },
-        )
+    async def _send_remote_command(self, command):
+        if self.remote_type == "Tuya RC5":
+            await self.hass.services.async_call(
+                "remote",
+                "send_command",
+                {
+                    "entity_id": self.remote_entity,
+                    "num_repeats": "1",
+                    "delay_secs": "0.4",
+                    "command": f"{TUYA_COMMANDS[command]['rc5']}",
+                },
+            )
+        if self.remote_type == "Tuya Raw":
+            await self.hass.services.async_call(
+                "remote",
+                "send_command",
+                {
+                    "entity_id": self.remote_entity,
+                    "num_repeats": "1",
+                    "delay_secs": "0.4",
+                    "command": f"{TUYA_COMMANDS[command]['raw']}",
+                },
+            )
+
+        if self.remote_type == "Broadlink":
+            await self.hass.services.async_call(
+                "remote",
+                "send_command",
+                {
+                    "entity_id": self.remote_entity,
+                    "num_repeats": "1",
+                    "delay_secs": "0.4",
+                    "command": f"b64:{BROADLINK_COMMANDS[command]}",
+                },
+            )
 
     async def async_play(self):
-        if self.broadlink_entity:
-            await self._send_broadlink_command("play")
+        if self.remote_entity:
+            await self._send_remote_command("play")
         else:
             if not self.streamer.last_uri or self.streamer.status == "ERROR_OCCURRED":
                 uri = self.data.get("media_uri") or self.streamer.last_uri
@@ -121,29 +151,29 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def async_pause(self):
         """Pause and confirm."""
-        if self.broadlink_entity:
-            await self._send_broadlink_command("pause")
+        if self.remote_entity:
+            await self._send_remote_command("pause")
         else:
             await self.streamer.pause()
 
     async def async_stop(self):
         """Stop and confirm."""
-        if self.broadlink_entity:
-            await self._send_broadlink_command("stop")
+        if self.remote_entity:
+            await self._send_remote_command("stop")
         else:
             await self.streamer.stop()
 
     async def async_next_track(self):
         """Skip to the next track and confirm actual state."""
-        if self.broadlink_entity:
-            await self._send_broadlink_command("next")
+        if self.remote_entity:
+            await self._send_remote_command("next")
         else:
             await self.streamer.next()
 
     async def async_previous_track(self):
         """Skip to the previous track and confirm actual state."""
-        if self.broadlink_entity:
-            await self._send_broadlink_command("previous")
+        if self.remote_entity:
+            await self._send_remote_command("previous")
         else:
             await self.streamer.previous()
 
