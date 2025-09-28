@@ -1,7 +1,8 @@
 {
     "config": {
         "error": {
-            "data": "You must select a Broadlink remote entity"
+            "data": "You must select a remote entity if you specify a remote type",
+            "entity": "You must select a remote type if you specify a remote entity"
         },
         "step": {
             "confirm": {
@@ -9,7 +10,9 @@
                     "host": "IP Address of the streamer",
                     "name": "Name of the streamer",
                     "broadlink_remote": "Include Broadlink Remote commands?",
+                    "remote_type": "What type of IR blaster is installed?",
                     "broadlink_entity": "Broadlink Entity",
+                    "remote_entity": "Which remote entty to use?",
                     "manufacturer": "Manufacturer",
                     "model": "Model",
                     "port": "Port of the streamer"
@@ -22,7 +25,9 @@
                     "host": "IP Address of the streamer",
                     "name": "Name of the streamer",
                     "broadlink_remote": "Include Broadlink Remote commands?",
+                    "remote_type": "What type of IR blaster is installed?",
                     "broadlink_entity": "Broadlink Entity",
+                    "remote_entity": "Which remote entty to use?",
                     "manufacturer": "Manufacturer",
                     "model": "Model",
                     "port": "Port of the streamer"

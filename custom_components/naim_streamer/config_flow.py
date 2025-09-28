@@ -17,15 +17,21 @@ from homeassistant.data_entry_flow import FlowResult
 
 from homeassistant.helpers import config_validation as cv
 
-from homeassistant.helpers.selector import EntitySelector, EntitySelectorConfig
+from homeassistant.helpers.selector import (
+    EntitySelector,
+    EntitySelectorConfig,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 
 from .const import (
     DOMAIN,
-    CONF_BROADLINK,
+    CONF_REMOTE_ENTITY,
     CONF_RENDERING_CONTROL_URL,
     CONF_AV_TRANSPORT_URL,
     CONF_CONNECTION_MANAGER_URL,
-    CONF_BROADLINK_REMOTE,
+    CONF_REMOTE_TYPE,
 )
 
 
@@ -45,14 +51,14 @@ CONFIG_SCHEMA = vol.Schema(
         vol.Required(CONF_PORT): cv.string,
         vol.Required(ATTR_MANUFACTURER): cv.string,
         vol.Required(CONF_MODEL): cv.string,
-        vol.Optional(
-            CONF_BROADLINK_REMOTE,
-            default=False,
-        ): cv.boolean,
-        vol.Optional(CONF_BROADLINK): EntitySelector(
-            EntitySelectorConfig(
-                filter={"integration": "broadlink", "domain": "remote"}
+        vol.Required(CONF_REMOTE_TYPE): SelectSelector(
+            SelectSelectorConfig(
+                mode=SelectSelectorMode.DROPDOWN,
+                options=["None", "Broadlink", "Tuya RC5", "Tuya Raw"],
             )
+        ),
+        vol.Optional(CONF_REMOTE_ENTITY): EntitySelector(
+            EntitySelectorConfig(filter={"domain": "remote"})
         ),
     }
 )
@@ -114,7 +120,7 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_PORT: self.port or 8080,
                     ATTR_MANUFACTURER: self.manufacturer or "Naim Audio Ltd.",
                     CONF_MODEL: self.model or "NDX",
-                    "broadlink_remote": False,
+                    CONF_REMOTE_TYPE: "None",
                 },
             ),
             errors=errors,
@@ -214,15 +220,18 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return await self.async_step_confirm()
 
     async def validate_remote(self, data: dict) -> None:
-        if CONF_BROADLINK_REMOTE not in data.keys():
-            data[CONF_BROADLINK_REMOTE] = False
+        if CONF_REMOTE_TYPE not in data.keys():
+            data[CONF_REMOTE_TYPE] = "None"
 
-        if CONF_BROADLINK not in data.keys():
-            data[CONF_BROADLINK] = ""
+        if CONF_REMOTE_ENTITY not in data.keys():
+            data[CONF_REMOTE_ENTITY] = ""
 
-        if (len(data[CONF_BROADLINK]) < 2) and (data[CONF_BROADLINK_REMOTE]):
+        if (len(data[CONF_REMOTE_ENTITY]) < 2) and (data[CONF_REMOTE_TYPE]) != "None":
             # Manual entry requires host and name
-            raise ValueError
+            raise ValueError("no_type")
+
+        if (data[CONF_REMOTE_TYPE]) == "None" and (len(data[CONF_REMOTE_ENTITY]) > 1):
+            raise ValueError("no_entity")
 
     async def async_step_confirm(self, user_input=None):
         """Ask user to confirm adding the device."""
@@ -230,8 +239,10 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             try:
                 await self.validate_remote(user_input)
-            except ValueError:
+            except ValueError("no_type"):
                 errors["base"] = "data"
+            except ValueError("no_entity"):
+                errors["base"] = "entity"
             if not errors:
                 # Input is valid, set data.
                 extras = {
@@ -260,6 +271,7 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_PORT: self.port or 8080,
                     ATTR_MANUFACTURER: self.manufacturer or "Naim Audio Ltd.",
                     CONF_MODEL: self.model or "NDX",
+                    CONF_REMOTE_TYPE: "None",
                 },
             ),
             description_placeholders=self.context["title_placeholders"],

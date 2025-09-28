@@ -5,7 +5,7 @@ from .coordinator import StreamerDataUpdateCoordinator
 
 # from . import StreamerData, StreamerConfigEntry
 
-from .const import DOMAIN
+from .const import DOMAIN, CONF_REMOTE_ENTITY
 
 import logging
 
@@ -42,7 +42,7 @@ async def async_setup_entry(
     config_entry.runtime_data = StreamerData(coordinator=coordinator)
     await coordinator.async_config_entry_first_refresh()
 
-    if config_entry.data.get("broadlink_entity"):
+    if config_entry.data.get(CONF_REMOTE_ENTITY):
         PLATFORMS = [
             Platform.MEDIA_PLAYER,
             Platform.BUTTON,
