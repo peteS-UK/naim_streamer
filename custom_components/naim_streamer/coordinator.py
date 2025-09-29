@@ -156,6 +156,21 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         else:
             await self.streamer.pause()
 
+    async def async_volume_up(self):
+        """Pause and confirm."""
+        if self.remote_entity:
+            await self._send_remote_command("vol+")
+
+    async def async_volume_down(self):
+        """Pause and confirm."""
+        if self.remote_entity:
+            await self._send_remote_command("vol-")
+
+    async def async_mute_toggle(self):
+        """Pause and confirm."""
+        if self.remote_entity:
+            await self._send_remote_command("mute")
+
     async def async_stop(self):
         """Stop and confirm."""
         if self.remote_entity:
