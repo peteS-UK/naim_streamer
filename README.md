@@ -27,10 +27,8 @@ The integration should discover your steamer automatically and list it in the Di
 
 ## Remote Entity
 
-The Naim streamers have no published API, and early devices such as the NDX have no API to properly control the device, other than a SOAP interface required for UPnP control.  As such, this integration is in two parts.  Firstly, it implements the UPnP interface for playback controls and to receive metadata and status information from the streamer.  Secondly, if you have a remote ir blaster device and you select it in the Configuration page, it implements all of the buttons from the remote control as buttons in Home Assistant.
+The Naim streamers have no published API, and early devices such as the NDX have no API to properly control the device, other than a SOAP interface required for UPnP control. As such, this integration is in two parts. Firstly, it implements the UPnP interface for playback controls and to receive metadata and status information from the streamer. Secondly, if you have a remote ir blaster device and you select it in the Configuration page, it implements all of the buttons from the remote control as buttons in Home Assistant.
 
 ## Volume Control
 
-The NDX doesn't actually have any digital volume control.  The volume buttons on the remote as designed to control the volume on a Naim pre-amp.  This is actually the preferred designed to maintain maximum sound quality.  So, the volume control buttons only affect the volume if you have a Naim pre-amp.
-
-
+The NDX doesn't actually have any digital volume control. The volume buttons on the remote as designed to control the volume on a Naim pre-amp. This is actually the preferred designed to maintain maximum sound quality. So, the volume control buttons only affect the volume if you have a Naim pre-amp. They are only available if you have a remote entity defined.

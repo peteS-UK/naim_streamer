@@ -135,16 +135,21 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
     def state(self):
         return self.coordinator.data.get("state")
 
+    @property
+    def is_volume_muted(self) -> bool:
+        """Return true if volume is muted."""
+        return False
+
     async def async_media_play(self):
-        await self.coordinator.play()
+        await self.coordinator.async_play()
 
     async def async_media_pause(self):
         """Pause and confirm."""
-        await self.coordinator.pause()
+        await self.coordinator.async_pause()
 
     async def async_media_stop(self):
         """Stop and confirm."""
-        await self.coordinator.stop()
+        await self.coordinator.async_stop()
 
     async def async_volume_up(self):
         await self.coordinator.async_volume_up()
@@ -162,15 +167,6 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
     async def async_media_previous_track(self):
         """Skip to the previous track and confirm actual state."""
         await self.coordinator.previous_track()
-
-    async def async_set_volume_level(self, volume: float):
-        """Set volume level and confirm."""
-        vol_int = int(volume * 100)
-        await self._streamer.set_volume(vol_int)
-
-    async def async_mute_volume(self, mute: bool):
-        """Mute/unmute and confirm."""
-        await self._streamer.set_mute(mute)
 
     async def async_play_media(self, media_type: str, media_id: str, **kwargs):
         """Handle play_media service calls."""
