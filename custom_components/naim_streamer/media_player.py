@@ -37,6 +37,11 @@ SUPPORT_STREAMER = (
     | MediaPlayerEntityFeature.STOP
     | MediaPlayerEntityFeature.SELECT_SOURCE
     | MediaPlayerEntityFeature.SEEK
+    | MediaPlayerEntityFeature.VOLUME_STEP
+    | MediaPlayerEntityFeature.VOLUME_MUTE
+)
+SUPPORT_STREAMER_VOLUME = (
+    MediaPlayerEntityFeature.VOLUME_STEP | MediaPlayerEntityFeature.VOLUME_MUTE
 )
 
 
@@ -66,7 +71,7 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
         self._attr_unique_id = coordinator.uuid
         self._attr_name = None
         self._attr_has_entity_name = True
-        self._broadlink_entity = coordinator.remote_entity
+        self._remote_entity = coordinator.remote_entity
 
     @property
     def should_poll(self):
@@ -112,16 +117,19 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
 
     @property
     def supported_features(self) -> MediaPlayerEntityFeature:
-        return SUPPORT_STREAMER
+        if not self._remote_entity:
+            return SUPPORT_STREAMER
+        else:
+            return SUPPORT_STREAMER | SUPPORT_STREAMER_VOLUME
 
     @property
     def volume_level(self):
         volume = self.coordinator.data.get("volume")
         return volume / 100 if volume is not None else None
 
-    @property
-    def is_volume_muted(self):
-        return self.coordinator.data.get("mute")
+    #    @property
+    #    def is_volume_muted(self):
+    #        return self.coordinator.data.get("mute")
 
     @property
     def state(self):
@@ -137,6 +145,15 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
     async def async_media_stop(self):
         """Stop and confirm."""
         await self.coordinator.stop()
+
+    async def async_volume_up(self):
+        await self.coordinator.async_volume_up()
+
+    async def async_volume_down(self):
+        await self.coordinator.async_volume_down()
+
+    async def async_mute_volume(self, mute: bool) -> None:
+        await self.coordinator.async_mute_toggle()
 
     async def async_media_next_track(self):
         """Skip to the next track and confirm actual state."""
@@ -196,5 +213,5 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
         await self._streamer.seek(position)
 
     async def async_select_source(self, source: str) -> None:
-        if self._broadlink_entity:
+        if self._remote_entity:
             await self.coordinator.async_send_command(source.lower())
