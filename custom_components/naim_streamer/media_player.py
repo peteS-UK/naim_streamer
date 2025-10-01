@@ -40,6 +40,7 @@ SUPPORT_STREAMER = (
     | MediaPlayerEntityFeature.VOLUME_STEP
     | MediaPlayerEntityFeature.VOLUME_MUTE
 )
+
 SUPPORT_STREAMER_VOLUME = (
     MediaPlayerEntityFeature.VOLUME_STEP | MediaPlayerEntityFeature.VOLUME_MUTE
 )
@@ -143,9 +144,12 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
     async def async_media_play(self):
         await self.coordinator.async_play()
 
+    async def async_media_play_pause(self):
+        await self.coordinator.async_play()
+
     async def async_media_pause(self):
         """Pause and confirm."""
-        await self.coordinator.async_pause()
+        await self.coordinator.async_play()
 
     async def async_media_stop(self):
         """Stop and confirm."""
