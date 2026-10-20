@@ -1,20 +1,20 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from homeassistant import core
-from homeassistant.components.media_player import (
-    MediaPlayerEntity,
+from homeassistant.components.media_player import MediaPlayerEntity
+from homeassistant.components.media_player.const import (
     MediaPlayerEntityFeature,
     MediaPlayerState,
 )
-
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from . import StreamerConfigEntry
 from .const import (
     SOURCES,
 )
-
 from .coordinator import StreamerDataUpdateCoordinator
 from .entity import StreamerEntity
 
@@ -48,7 +48,7 @@ SUPPORT_STREAMER_VOLUME = (
 
 async def async_setup_entry(
     hass: core.HomeAssistant,
-    config_entry: StreamerEntity,
+    config_entry: StreamerConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Setup Media Player"""
@@ -166,11 +166,11 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
 
     async def async_media_next_track(self):
         """Skip to the next track and confirm actual state."""
-        await self.coordinator.next_track()
+        await self.coordinator.async_next_track()
 
     async def async_media_previous_track(self):
         """Skip to the previous track and confirm actual state."""
-        await self.coordinator.previous_track()
+        await self.coordinator.async_previous_track()
 
     async def async_play_media(self, media_type: str, media_id: str, **kwargs):
         """Handle play_media service calls."""
@@ -208,9 +208,10 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
         """Return the duration in seconds."""
         return self.coordinator.data.get("media_duration")
 
-    async def async_media_seek(self, position: int):
+    async def async_media_seek(self, position: float):
         """Handle media_seek service calls (position in seconds)."""
-        await self._streamer.seek(position)
+        _time = time.strftime("%H:%M:%S", time.gmtime(position))
+        await self._streamer.seek(target=_time)
 
     async def async_select_source(self, source: str) -> None:
         if self._remote_entity:

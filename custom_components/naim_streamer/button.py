@@ -1,9 +1,11 @@
 """Platform for button integration for squeezebox."""
 
+# pyright: reportIncompatibleVariableOverride=false
+
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
 
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
 from homeassistant.core import HomeAssistant
@@ -12,7 +14,6 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from . import StreamerConfigEntry
 from .coordinator import StreamerDataUpdateCoordinator
 from .entity import StreamerEntity
-
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -127,7 +128,7 @@ async def async_setup_entry(
 class StreamerButtonEntity(StreamerEntity, ButtonEntity):
     """Representation of Buttons for Squeezebox entities."""
 
-    entity_description: StreamerButtonEntityDescription
+    _entity_description: StreamerButtonEntityDescription
 
     def __init__(
         self,
@@ -137,12 +138,12 @@ class StreamerButtonEntity(StreamerEntity, ButtonEntity):
         """Initialize the button."""
         super().__init__(coordinator)
         self._coordinator = coordinator
-        self.entity_description = entity_description
+        self._entity_description = entity_description
         self._attr_unique_id = self._coordinator.uuid + "_" + entity_description.key
-        self._attr_name = entity_description.name
+        self._attr_name = str(entity_description.name)
         self._attr_has_entity_name = True
 
     async def async_press(self) -> None:
         """Execute the button action."""
-        _LOGGER.debug("Button pressed: %s", self.entity_description.key)
-        await self._coordinator.async_send_command(self.entity_description.key)
+        _LOGGER.debug("Button pressed: %s", self._entity_description.key)
+        await self._coordinator.async_send_command(self._entity_description.key)

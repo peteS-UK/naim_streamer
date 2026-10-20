@@ -1,16 +1,10 @@
-import aiohttp
 import logging
-from typing import Optional
-
-import xml.etree.ElementTree as ET
-
 import mimetypes
+import xml.etree.ElementTree as ET
 from urllib.parse import urlparse
 
-from homeassistant.components.media_player import (
-    MediaPlayerState,
-)
-
+import aiohttp
+from homeassistant.components.media_player.const import MediaPlayerState
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,7 +22,7 @@ class NaimStreamerClient:
         rendering_control_url: str,
         av_transport_url: str,
         connection_manager_url: str,
-        host: str = None,
+        host: str | None = None,
     ):
         self._name = name
         self._udn = udn
@@ -43,6 +37,7 @@ class NaimStreamerClient:
         self.last_metadata = None
         self.state = MediaPlayerState.IDLE
         self.status = ""
+        self.base_url = f"http://{host}:{port}/"
 
     async def subscribe_service(
         self, event_url: str, callback_url: str, timeout: int = 300
@@ -60,21 +55,22 @@ class NaimStreamerClient:
             "NT": "upnp:event",
             "TIMEOUT": f"Second-{timeout}",
         }
-        async with aiohttp.ClientSession() as session:
-            async with session.request("SUBSCRIBE", event_url, headers=headers) as resp:
-                _LOGGER.debug(
-                    "SUBSCRIBE %s returned %s headers=%s",
-                    event_url,
-                    resp.status,
-                    resp.headers,
-                )
-                if resp.status != 200:
-                    raise Exception(f"SUBSCRIBE failed ({resp.status}) for {event_url}")
-                sid = resp.headers.get("SID")
-                if not sid:
-                    raise Exception(f"No SID returned for {event_url}")
-                _LOGGER.debug("Subscribed to %s with SID %s", event_url, sid)
-                return sid
+        async with aiohttp.ClientSession() as session, session.request(
+            "SUBSCRIBE", event_url, headers=headers
+        ) as resp:
+            _LOGGER.debug(
+                "SUBSCRIBE %s returned %s headers=%s",
+                event_url,
+                resp.status,
+                resp.headers,
+            )
+            if resp.status != 200:
+                _LOGGER.error("SUBSCRIBE failed (%s) for %s", resp.status, event_url)
+            sid = resp.headers.get("SID", "")
+            if not sid:
+                _LOGGER.error("No SID returned for %s", event_url)
+            _LOGGER.debug("Subscribed to %s with SID %s", event_url, sid)
+            return sid
 
     async def renew_subscription(
         self, event_url: str, sid: str, timeout: int = 300
@@ -91,39 +87,23 @@ class NaimStreamerClient:
             "SID": sid,
             "TIMEOUT": f"Second-{timeout}",
         }
-        async with aiohttp.ClientSession() as session:
-            async with session.request("SUBSCRIBE", event_url, headers=headers) as resp:
-                if resp.status != 200:
-                    raise Exception(f"Renew failed ({resp.status}) for {event_url}")
-                new_sid = resp.headers.get("SID", sid)
-                _LOGGER.debug("Renewed subscription %s -> %s", sid, new_sid)
-                return new_sid
+        async with aiohttp.ClientSession() as session, session.request(
+            "SUBSCRIBE", event_url, headers=headers
+        ) as resp:
+            if resp.status != 200:
+                _LOGGER.error("Renew failed (%s) for %s", resp.status, event_url)
+            new_sid = resp.headers.get("SID", sid)
+            _LOGGER.debug("Renewed subscription %s -> %s", sid, new_sid)
+            return new_sid
 
     async def has_current_uri(self) -> bool:
         """Return True if the transport has a non-empty CurrentURI."""
-        info = await self.get_media_info(parsed=True)
+        info: dict[str, str] | str | None = await self.get_media_info(parsed=True)
+        if not isinstance(info, dict):
+            return False
         return bool(info.get("CurrentURI"))
 
-    async def seek(self, position_seconds: int, parsed: bool = False):
-        """Seek to a position in the current track."""
-        hours = position_seconds // 3600
-        minutes = (position_seconds % 3600) // 60
-        seconds = position_seconds % 60
-        target = f"{hours:02}:{minutes:02}:{seconds:02}"
-
-        _LOGGER.debug("Seeking to %s (REL_TIME)", target)
-        raw = await self._soap_request(
-            service="AVTransport",
-            action="Seek",
-            arguments={
-                "InstanceID": 0,
-                "Unit": "REL_TIME",
-                "Target": target,
-            },
-        )
-        return {"success": bool(raw and "Fault" not in raw)} if parsed else raw
-
-    async def seekold(
+    async def seek(
         self,
         instance_id: int = 0,
         unit: str = "REL_TIME",
@@ -187,7 +167,7 @@ class NaimStreamerClient:
         </DIDL-Lite>"""
 
         _LOGGER.debug("Setting AVTransport URI to %s with metadata:\n%s", uri, didl)
-        await self.set_av_transport_uri(uri, didl)
+        await self.set_av_transport_uri(uri, metadata=didl)
         await self.play()
 
         # Persist for resume
@@ -226,13 +206,13 @@ class NaimStreamerClient:
                     result[tag_name] = elem.text or ""
         except ET.ParseError as e:
             _LOGGER.error("Failed to parse SOAP XML: %s", e)
-        except Exception as e:
-            _LOGGER.error("Error extracting tags %s: %s", tags, e)
+        except Exception:
+            _LOGGER.exception("Error extracting tags %s:", tags)
         return result
 
     async def _soap_request(
         self, url: str, service: str, action: str, body_xml: str
-    ) -> Optional[str]:
+    ) -> str | None:
         """Send a SOAP request and return the raw XML response."""
         headers = {
             "Content-Type": 'text/xml; charset="utf-8"',
@@ -246,14 +226,13 @@ class NaimStreamerClient:
   </s:Body>
 </s:Envelope>"""
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    url, data=envelope.encode("utf-8"), headers=headers
-                ) as resp:
-                    resp.raise_for_status()
-                    return await resp.text()
-        except Exception as e:
-            _LOGGER.error("SOAP request %s failed: %s", action, e)
+            async with aiohttp.ClientSession() as session, session.post(
+                url, data=envelope.encode("utf-8"), headers=headers
+            ) as resp:
+                resp.raise_for_status()
+                return await resp.text()
+        except Exception:
+            _LOGGER.exception("SOAP request %s failed:", action)
             return None
 
     # ---------------- RenderingControl ----------------

@@ -1,36 +1,32 @@
-import logging
-import socket
+"""Coordinator for Naim Streamer integration."""
+
 import asyncio
 import html
+import logging
 import re
-
-from lxml import etree
-
+import socket
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import timedelta
-from aiohttp import web
-
+from typing import Any, cast
 from urllib.parse import urljoin
 
+from aiohttp import ClientSession, web
+from homeassistant.components.media_player.const import MediaPlayerState
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_NAME, ATTR_MANUFACTURER, CONF_MODEL, CONF_PORT
+from homeassistant.const import ATTR_MANUFACTURER, CONF_MODEL, CONF_NAME, CONF_PORT
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.components.media_player import MediaPlayerState
-
 from homeassistant.exceptions import ServiceValidationError
-
-from .naim_streamer_client import NaimStreamerClient
-
-from aiohttp import ClientSession
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from lxml import etree
 
 from .const import (
     BROADLINK_COMMANDS,
-    TUYA_COMMANDS,
     CONF_REMOTE_ENTITY,
     CONF_REMOTE_TYPE,
+    TUYA_COMMANDS,
 )
+from .naim_streamer_client import NaimStreamerClient
 
 TRANSPORT_TO_HA_STATE = {
     "STOPPED": MediaPlayerState.IDLE,
@@ -68,7 +64,17 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         )
         self.hass = hass
         self.config_entry = config_entry
-        self.streamer = None
+        self.streamer = NaimStreamerClient(
+            name=self.config_entry.data["name"],
+            udn=self.config_entry.data["udn"],
+            manufacturer=self.config_entry.data[ATTR_MANUFACTURER],
+            model=self.config_entry.data[CONF_MODEL],
+            port=self.config_entry.data[CONF_PORT],
+            rendering_control_url=self.config_entry.data["rendering_control_url"],
+            av_transport_url=self.config_entry.data["av_transport_url"],
+            connection_manager_url=self.config_entry.data["connection_manager_url"],
+            host=self.config_entry.data["host"],
+        )
         self.sid_av = None
         self.sid_rc = None
         self._runner = None
@@ -76,6 +82,57 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         self.data = {}
         self.remote_entity = config_entry.data.get(CONF_REMOTE_ENTITY)
         self.remote_type = config_entry.data.get(CONF_REMOTE_TYPE)
+        self.uuid = self.config_entry.data["udn"]
+
+    async def _async_setup(self):
+        """Initialise client and subscribe to events."""
+
+        # Start local aiohttp server for NOTIFY callbacks
+        app = web.Application()
+        app.router.add_route("NOTIFY", "/upnp/event", self._handle_notify)
+        self._runner = web.AppRunner(app)
+        await self._runner.setup()
+        self._site = web.TCPSite(self._runner, "0.0.0.0", 0)
+        await self._site.start()
+        assert self._site._server is not None
+        server = cast(Any, self._site._server)
+        port = server.sockets[0].getsockname()[1]
+        local_ip = self._get_local_ip(self.streamer.host)
+
+        callback_url = f"http://{local_ip}:{port}/upnp/event"
+
+        _LOGGER.debug("Callback URL: %s", callback_url)
+
+        _LOGGER.debug("Config entry data: %s", self.config_entry.data)
+
+        _LOGGER.debug(
+            "Subscribing AVTransport to %s",
+            self.config_entry.data["av_transport_event_url"],
+        )
+        _LOGGER.debug(
+            "Subscribing RenderingControl to %s",
+            self.config_entry.data["rendering_control_event_url"],
+        )
+
+        try:
+            self.sid_av = await self.streamer.subscribe_service(
+                self.config_entry.data["av_transport_event_url"], callback_url
+            )
+            self.sid_rc = await self.streamer.subscribe_service(
+                self.config_entry.data["rendering_control_event_url"], callback_url
+            )
+            if self.sid_av and self.sid_rc:
+                # Both subscriptions healthy — go push‑only
+                self.update_interval = None
+            self._renew_task = asyncio.create_task(self._renew_loop(callback_url))
+        except Exception:
+            _LOGGER.exception("Subscription failed, using fast poll:")
+            self.update_interval = timedelta(seconds=30)
+
+        _LOGGER.debug("AVTransport SID: %s", self.sid_av)
+        _LOGGER.debug("RenderingControl SID: %s", self.sid_rc)
+
+        # return await self._async_update_data()
 
     async def async_send_command(self, command):
         if command == "play":
@@ -143,7 +200,7 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
 
                 if uri and metadata:
                     _LOGGER.debug("Restoring AVTransport URI before play: %s", uri)
-                    await self.streamer.set_av_transport_uri(uri, metadata)
+                    await self.streamer.set_av_transport_uri(uri, metadata=metadata)
                 else:
                     _LOGGER.warning("No stored URI/metadata to restore before play")
 
@@ -192,66 +249,6 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         else:
             await self.streamer.previous()
 
-    async def _async_setup(self):
-        """Initialise client and subscribe to events."""
-        self.streamer = NaimStreamerClient(
-            name=self.config_entry.data["name"],
-            udn=self.config_entry.data["udn"],
-            manufacturer=self.config_entry.data[ATTR_MANUFACTURER],
-            model=self.config_entry.data[CONF_MODEL],
-            port=self.config_entry.data[CONF_PORT],
-            rendering_control_url=self.config_entry.data["rendering_control_url"],
-            av_transport_url=self.config_entry.data["av_transport_url"],
-            connection_manager_url=self.config_entry.data["connection_manager_url"],
-            host=self.config_entry.data["host"],
-        )
-        self.uuid = self.streamer.udn
-
-        # Start local aiohttp server for NOTIFY callbacks
-        app = web.Application()
-        app.router.add_route("NOTIFY", "/upnp/event", self._handle_notify)
-        self._runner = web.AppRunner(app)
-        await self._runner.setup()
-        self._site = web.TCPSite(self._runner, "0.0.0.0", 0)
-        await self._site.start()
-        port = self._site._server.sockets[0].getsockname()[1]
-        local_ip = self._get_local_ip(self.streamer.host)
-
-        callback_url = f"http://{local_ip}:{port}/upnp/event"
-
-        _LOGGER.debug("Callback URL: %s", callback_url)
-
-        _LOGGER.debug("Config entry data: %s", self.config_entry.data)
-
-        _LOGGER.debug(
-            "Subscribing AVTransport to %s",
-            self.config_entry.data["av_transport_event_url"],
-        )
-        _LOGGER.debug(
-            "Subscribing RenderingControl to %s",
-            self.config_entry.data["rendering_control_event_url"],
-        )
-
-        try:
-            self.sid_av = await self.streamer.subscribe_service(
-                self.config_entry.data["av_transport_event_url"], callback_url
-            )
-            self.sid_rc = await self.streamer.subscribe_service(
-                self.config_entry.data["rendering_control_event_url"], callback_url
-            )
-            if self.sid_av and self.sid_rc:
-                # Both subscriptions healthy — go push‑only
-                self.update_interval = None
-            self._renew_task = asyncio.create_task(self._renew_loop(callback_url))
-        except Exception as err:
-            _LOGGER.warning("Subscription failed, using fast poll: %s", err)
-            self.update_interval = timedelta(seconds=30)
-
-        _LOGGER.debug("AVTransport SID: %s", self.sid_av)
-        _LOGGER.debug("RenderingControl SID: %s", self.sid_rc)
-
-        return await self._async_update_data()
-
     async def _renew_loop(self, callback_url: str):
         timeout = 300
         renew_interval = timeout - 60
@@ -277,8 +274,8 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
                     else:
                         # One missing — fast poll
                         self.update_interval = timedelta(seconds=30)
-                except Exception as err:
-                    _LOGGER.warning("Renewal failed: %s", err)
+                except Exception:
+                    _LOGGER.exception("Renewal failed.")
                     # Try full re‑subscribe
                     try:
                         self.sid_av = await self.streamer.subscribe_service(
@@ -295,8 +292,8 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
                             self.update_interval = None
                         else:
                             self.update_interval = timedelta(seconds=30)
-                    except Exception as err2:
-                        _LOGGER.error("Re‑subscribe failed: %s", err2)
+                    except Exception:
+                        _LOGGER.exception("Re‑subscribe failed:")
                         self.update_interval = timedelta(seconds=30)
         except asyncio.CancelledError:
             _LOGGER.debug("Renewal loop cancelled")
@@ -328,6 +325,7 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
             for prop in root.findall(".//e:property", ns):
                 for child in prop:
                     if child.tag == "LastChange" and (child.text or "").strip():
+                        assert child.text is not None
                         self._parse_last_change(child.text)
 
         elif service_type == "renderingcontrol":
@@ -474,12 +472,30 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
             transport_data = await self.streamer.get_transport_info(parsed=True)
             media_info = await self.streamer.get_media_info(parsed=True)
 
-            raw_state = transport_data.get("CurrentTransportState", "UNKNOWN").upper()
+            if isinstance(transport_data, dict):
+                raw_state = transport_data.get(
+                    "CurrentTransportState", "UNKNOWN"
+                ).upper()
+            else:
+                raw_state = (
+                    transport_data.upper()
+                    if isinstance(transport_data, str)
+                    else "UNKNOWN"
+                )
+
+            if isinstance(vol_data, dict) and "CurrentVolume" in vol_data:
+                _vol = int(vol_data.get("CurrentVolume", 0))
+            else:
+                _vol = self.data.get("volume", 0)
+
+            if not isinstance(mute_data, dict):
+                mute_data = {}
+
+            if not isinstance(media_info, dict):
+                media_info = {}
 
             return {
-                "volume": int(
-                    vol_data.get("CurrentVolume", self.data.get("volume", 0))
-                ),
+                "volume": int(_vol),
                 "mute": bool(
                     int(mute_data.get("CurrentMute", int(self.data.get("mute", False))))
                 ),
@@ -543,8 +559,8 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
                         headers={"SID": self.sid_av},
                     ) as resp:
                         _LOGGER.info("Unsubscribed from AVTransport: %s", resp.status)
-                except Exception as e:
-                    _LOGGER.warning("Failed to unsubscribe from AVTransport: %s", e)
+                except Exception:
+                    _LOGGER.exception("Failed to unsubscribe from AVTransport:")
 
             if self.sid_rc:
                 try:
@@ -556,18 +572,16 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
                         _LOGGER.info(
                             "Unsubscribed from RenderingControl: %s", resp.status
                         )
-                except Exception as e:
-                    _LOGGER.warning(
-                        "Failed to unsubscribe from RenderingControl: %s", e
-                    )
+                except Exception:
+                    _LOGGER.exception("Failed to unsubscribe from RenderingControl:")
 
         self.sid_av = None
         self.sid_rc = None
 
         # Stop local aiohttp server
-        if getattr(self, "_site", None):
+        if getattr(self, "_site", None) and self._site:
             await self._site.stop()
             self._site = None
-        if getattr(self, "_runner", None):
+        if getattr(self, "_runner", None) and self._runner:
             await self._runner.cleanup()
             self._runner = None
