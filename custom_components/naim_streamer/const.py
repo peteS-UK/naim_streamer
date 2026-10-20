@@ -44,7 +44,7 @@ BROADLINK_COMMANDS = {
     "next": "JgAWAB0dOjo6Ojo6HR06HR0dHR0dHR0AC4QAAA==",
     "stop": "JgAUAB0dOjo6Ojo6HR0dHTo6HR06AAuEAAAAAA==",
     "rewind": "JgAUAB0dOjo6Ojo6HR0dHTodHTo6AAuEAAAAAA==",
-    "fast-forward": "JgAUAB0dOjo6Ojo6HR0dHTo6Oh0dAAuEAAAAAA==",
+    "fastforward": "JgAUAB0dOjo6Ojo6HR0dHTo6Oh0dAAuEAAAAAA==",
     "cd": "JgASAB0dOjo6Ojo6Ojo6Ojo6HQALZwAAAAAAAA==",
     "radio": "JgASAB0dOjo6Ojo6Ojo6OjodHQALhAAAAAAAAA==",
     "pc": "JgAWAB0dOjo6Ojo6HR0dHR0dHR06Oh0AC2cAAA==",
