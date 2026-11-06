@@ -1,4 +1,4 @@
-# pyright: reportIncompatibleVariableOverride=false
+﻿# pyright: reportIncompatibleVariableOverride=false
 
 from __future__ import annotations
 
@@ -14,11 +14,9 @@ from homeassistant.components.media_player.const import (
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import StreamerConfigEntry
-from .const import (
-    SOURCES,
-)
 from .coordinator import StreamerDataUpdateCoordinator
 from .entity import StreamerEntity
+from .ir_codes import SOURCE_TO_KEY, SOURCES
 
 TRANSPORT_TO_HA_STATE = {
     "STOPPED": MediaPlayerState.IDLE,
@@ -74,7 +72,7 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
         self._attr_unique_id = coordinator.uuid
         self._attr_name = None
         self._attr_has_entity_name = True
-        self._remote_entity = coordinator.remote_entity
+        self._remote_entity = coordinator.infrared_entity_id
 
     @property
     def should_poll(self):
@@ -217,4 +215,4 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
 
     async def async_select_source(self, source: str) -> None:
         if self._remote_entity:
-            await self.coordinator.async_send_command(source.lower())
+            await self.coordinator.async_send_command(SOURCE_TO_KEY[source])

@@ -1,39 +1,49 @@
 {
-    "config": {
-        "error": {
-            "data": "You must select a remote entity if you specify a remote type",
-            "entity": "You must select a remote type if you specify a remote entity"
-        },
-        "step": {
-            "confirm": {
-                "data": {
-                    "host": "IP Address of the streamer",
-                    "name": "Name of the streamer",
-                    "broadlink_remote": "Include Broadlink Remote commands?",
-                    "remote_type": "What type of IR blaster is installed?",
-                    "broadlink_entity": "Broadlink Entity",
-                    "remote_entity": "Which remote entty to use?",
-                    "manufacturer": "Manufacturer",
-                    "model": "Model",
-                    "port": "Port of the streamer"
-                },
-                "title": "Add {name}?",
-                "description": "Do you want to add the discovered device {name} to Home Assistant?"
-            },
-            "user": {
-                "data": {
-                    "host": "IP Address of the streamer",
-                    "name": "Name of the streamer",
-                    "broadlink_remote": "Include Broadlink Remote commands?",
-                    "remote_type": "What type of IR blaster is installed?",
-                    "broadlink_entity": "Broadlink Entity",
-                    "remote_entity": "Which remote entty to use?",
-                    "manufacturer": "Manufacturer",
-                    "model": "Model",
-                    "port": "Port of the streamer"
-                },
-                "title": "Add Naim Streamer"
-            }
-        }
-    }
+    "config":  {
+                   "step":  {
+                                "confirm":  {
+                                                "data":  {
+                                                             "host":  "IP Address of the streamer",
+                                                             "name":  "Name of the streamer",
+                                                             "manufacturer":  "Manufacturer",
+                                                             "model":  "Model",
+                                                             "port":  "Port of the streamer",
+                                                             "infrared_entity_id":  "Infrared emitter entity (optional)"
+                                                         },
+                                                "title":  "Add {name}?",
+                                                "description":  "Do you want to add the discovered device {name} to Home Assistant?"
+                                            },
+                                "user":  {
+                                             "data":  {
+                                                          "host":  "IP Address of the streamer",
+                                                          "name":  "Name of the streamer",
+                                                          "manufacturer":  "Manufacturer",
+                                                          "model":  "Model",
+                                                          "port":  "Port of the streamer",
+                                                          "infrared_entity_id":  "Infrared emitter entity (optional)"
+                                                      },
+                                             "title":  "Add Naim Streamer"
+                                         }
+                            }
+               },
+    "issues":  {
+                   "reselect_ir_emitter":  {
+                                               "title":  "Select an infrared emitter for {name}",
+                                               "fix_flow":  {
+                                                                "step":  {
+                                                                             "confirm":  {
+                                                                                             "title":  "Select infrared emitter",
+                                                                                             "description":  "{name} now sends IR commands through Home Assistant\u0027s Infrared integration instead of Broadlink/Tuya remote entities. Choose the infrared emitter to use.",
+                                                                                             "data":  {
+                                                                                                          "infrared_entity_id":  "Infrared emitter"
+                                                                                                      }
+                                                                                         }
+                                                                         },
+                                                                "abort":  {
+                                                                              "no_emitters":  "No infrared emitters are available. Set up an infrared emitter first, then try again.",
+                                                                              "entry_not_found":  "The Naim Streamer config entry could not be found."
+                                                                          }
+                                                            }
+                                           }
+               }
 }

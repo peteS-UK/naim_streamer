@@ -3,7 +3,8 @@
     "name": "Naim Streamer",
     "config_flow": true,
     "dependencies": [
-        "ssdp"
+        "ssdp",
+        "infrared"
     ],
     "codeowners": [
         "@peteS-UK"
@@ -36,5 +37,5 @@
     "requirements": [
         "lxml>=4.9.0"
     ],
-    "version": "v1.2.1"
+    "version": "v2.0.0"
 }

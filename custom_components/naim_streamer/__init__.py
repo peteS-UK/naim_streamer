@@ -5,12 +5,13 @@ from .coordinator import StreamerDataUpdateCoordinator
 
 # from . import StreamerData, StreamerConfigEntry
 
-from .const import DOMAIN, CONF_REMOTE_ENTITY
+from .const import DOMAIN, CONF_INFRARED_ENTITY_ID
 
 import logging
 
 from dataclasses import dataclass
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers import issue_registry as ir
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,7 +26,34 @@ class StreamerData:
 type StreamerConfigEntry = ConfigEntry[StreamerData]
 
 
-PLATFORMS = []
+def _platforms_for_entry(config_entry: ConfigEntry) -> list[Platform]:
+    """Return the platforms to load; buttons need an infrared emitter."""
+    if config_entry.data.get(CONF_INFRARED_ENTITY_ID):
+        return [Platform.MEDIA_PLAYER, Platform.BUTTON]
+    return [Platform.MEDIA_PLAYER]
+
+
+def _update_legacy_remote_issue(
+    hass: core.HomeAssistant, config_entry: ConfigEntry
+) -> None:
+    """Raise a repair issue if the entry still uses a legacy Broadlink/Tuya remote."""
+    issue_id = f"reselect_ir_emitter_{config_entry.entry_id}"
+    uses_legacy = bool(config_entry.data.get("remote_entity")) and not (
+        config_entry.data.get(CONF_INFRARED_ENTITY_ID)
+    )
+    if uses_legacy:
+        ir.async_create_issue(
+            hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=True,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="reselect_ir_emitter",
+            translation_placeholders={"name": config_entry.title},
+            data={"entry_id": config_entry.entry_id},
+        )
+    else:
+        ir.async_delete_issue(hass, DOMAIN, issue_id)
 
 
 async def async_setup_entry(
@@ -34,25 +62,21 @@ async def async_setup_entry(
     """Set up platform from a ConfigEntry."""
 
     hass.data.setdefault(DOMAIN, {})
+    _update_legacy_remote_issue(hass, config_entry)
     # hass_data = dict(config_entry.data)
     # hass.data[DOMAIN][config_entry.entry_id] = hass_data
 
     coordinator = StreamerDataUpdateCoordinator(hass, config_entry)
 
     config_entry.runtime_data = StreamerData(coordinator=coordinator)
+    # Runs on unload and also if setup fails (e.g. ConfigEntryNotReady), so the
+    # callback server and subscriptions are never leaked.
+    config_entry.async_on_unload(coordinator.async_unload)
     await coordinator.async_config_entry_first_refresh()
 
-    if config_entry.data.get(CONF_REMOTE_ENTITY):
-        PLATFORMS = [
-            Platform.MEDIA_PLAYER,
-            Platform.BUTTON,
-        ]
-    else:
-        PLATFORMS = [
-            Platform.MEDIA_PLAYER,
-        ]
-
-    await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
+    await hass.config_entries.async_forward_entry_setups(
+        config_entry, _platforms_for_entry(config_entry)
+    )
 
     return True
 
@@ -62,11 +86,8 @@ async def async_unload_entry(
 ) -> bool:
     """Unload a config entry."""
 
-    # Get the coordinator from runtime_data
-    coordinator: StreamerDataUpdateCoordinator = entry.runtime_data.coordinator
-
-    # Cleanly unsubscribe from UPnP events and stop the local server
-    await coordinator.async_unload()
-
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    return unload_ok
+    # The coordinator is cleaned up by the on_unload callback registered in setup,
+    # which only runs once the platforms have unloaded successfully.
+    return await hass.config_entries.async_unload_platforms(
+        entry, _platforms_for_entry(entry)
+    )
