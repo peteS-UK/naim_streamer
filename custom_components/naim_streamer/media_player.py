@@ -1,4 +1,4 @@
-﻿# pyright: reportIncompatibleVariableOverride=false
+# pyright: reportIncompatibleVariableOverride=false
 
 from __future__ import annotations
 
@@ -14,8 +14,7 @@ from homeassistant.components.media_player.const import (
 )
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import StreamerConfigEntry
-from .coordinator import StreamerDataUpdateCoordinator
+from .coordinator import StreamerConfigEntry, StreamerDataUpdateCoordinator
 from .entity import StreamerEntity
 from .ir_codes import SOURCE_TO_KEY, SOURCES
 

@@ -1,29 +1,18 @@
-from homeassistant import config_entries, core
-from homeassistant.const import Platform
-
-from .coordinator import StreamerDataUpdateCoordinator
-
-# from . import StreamerData, StreamerConfigEntry
-
-from .const import DOMAIN, CONF_INFRARED_ENTITY_ID
-
 import logging
 
-from dataclasses import dataclass
+from homeassistant import config_entries, core
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.helpers import issue_registry as ir
 
+from .const import CONF_INFRARED_ENTITY_ID, DOMAIN
+from .coordinator import (
+    StreamerConfigEntry,
+    StreamerData,
+    StreamerDataUpdateCoordinator,
+)
+
 _LOGGER = logging.getLogger(__name__)
-
-
-@dataclass
-class StreamerData:
-    """Streamer data class."""
-
-    coordinator: StreamerDataUpdateCoordinator
-
-
-type StreamerConfigEntry = ConfigEntry[StreamerData]
 
 
 def _platforms_for_entry(config_entry: ConfigEntry) -> list[Platform]:

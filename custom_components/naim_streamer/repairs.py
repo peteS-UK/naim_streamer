@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import probatio
-from homeassistant import data_entry_flow
 from homeassistant.components.infrared import (
     DOMAIN as INFRARED_DOMAIN,
+)
+from homeassistant.components.infrared import (
     async_get_emitters,
 )
-from homeassistant.components.repairs import RepairsFlow
+from homeassistant.components.repairs import RepairsFlow, RepairsFlowResult
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.selector import EntitySelector, EntitySelectorConfig
 
@@ -25,12 +26,12 @@ class ReselectIREmitterFlow(RepairsFlow):
 
     async def async_step_init(
         self, user_input: dict[str, str] | None = None
-    ) -> data_entry_flow.FlowResult:
+    ) -> RepairsFlowResult:
         return await self.async_step_confirm()
 
     async def async_step_confirm(
         self, user_input: dict[str, str] | None = None
-    ) -> data_entry_flow.FlowResult:
+    ) -> RepairsFlowResult:
         emitters = async_get_emitters(self.hass)
         if not emitters:
             return self.async_abort(reason="no_emitters")
@@ -40,9 +41,7 @@ class ReselectIREmitterFlow(RepairsFlow):
             return self.async_abort(reason="entry_not_found")
 
         if user_input is not None:
-            data = {
-                k: v for k, v in entry.data.items() if k not in LEGACY_REMOTE_KEYS
-            }
+            data = {k: v for k, v in entry.data.items() if k not in LEGACY_REMOTE_KEYS}
             data[CONF_INFRARED_ENTITY_ID] = user_input[CONF_INFRARED_ENTITY_ID]
             self.hass.config_entries.async_update_entry(entry, data=data)
             # Reloading re-evaluates the issue, which deletes it.

@@ -11,8 +11,7 @@ from homeassistant.components.button import ButtonEntity, ButtonEntityDescriptio
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import StreamerConfigEntry
-from .coordinator import StreamerDataUpdateCoordinator
+from .coordinator import StreamerConfigEntry, StreamerDataUpdateCoordinator
 from .entity import StreamerEntity
 from .ir_codes import BUTTONS
 
