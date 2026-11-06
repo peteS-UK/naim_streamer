@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime
 
 from homeassistant import core
 from homeassistant.components.media_player import MediaPlayerEntity
@@ -208,10 +209,21 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
         """Return the duration in seconds."""
         return self.coordinator.data.get("media_duration")
 
+    @property
+    def media_position(self) -> int | None:
+        """Return the most recently sampled playback position in seconds."""
+        return self.coordinator.media_position
+
+    @property
+    def media_position_updated_at(self) -> datetime | None:
+        """Return when the playback position was sampled."""
+        return self.coordinator.media_position_updated_at
+
     async def async_media_seek(self, position: float):
         """Handle media_seek service calls (position in seconds)."""
         _time = time.strftime("%H:%M:%S", time.gmtime(position))
         await self._streamer.seek(target=_time)
+        self.coordinator.request_position_refresh()
 
     async def async_select_source(self, source: str) -> None:
         if self._remote_entity:

@@ -40,3 +40,8 @@ signals in the original learned preamp codes.
 
 The streamer remote uses a combined Play/Pause button, rather than a separate
 Pause button.
+
+Playback position is sampled from the streamer's UPnP `GetPositionInfo`
+response when playback changes and every 30 seconds while playing. Home
+Assistant displays progress between samples; position is unavailable for
+inputs that do not report `RelTime`.

@@ -7,12 +7,11 @@ import re
 import socket
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, cast
 from urllib.parse import urljoin
 
 from aiohttp import ClientTimeout, web
-from infrared_protocols.commands.rc5 import RC5Command
 from homeassistant.components.infrared import async_send_command
 from homeassistant.components.media_player.const import MediaPlayerState
 from homeassistant.config_entries import ConfigEntry
@@ -22,6 +21,8 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
+from infrared_protocols.commands.rc5 import RC5Command
 from lxml import etree
 
 from .const import CONF_INFRARED_ENTITY_ID, DOMAIN
@@ -46,6 +47,7 @@ type StreamerConfigEntry = ConfigEntry[StreamerData]
 
 DEFAULT_TIMEOUT = 10
 NOTIFY_WAIT_SECONDS = 30
+POSITION_REFRESH_SECONDS = 30
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -90,10 +92,20 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         self.infrared_entity_id = config_entry.data.get(CONF_INFRARED_ENTITY_ID)
         self._ir_toggle_by_address: dict[int, int] = {}
         self._ir_send_lock = asyncio.Lock()
+        self.media_position: int | None = None
+        self.media_position_updated_at: datetime | None = None
+        self._position_refresh_requested = asyncio.Event()
+        self._position_generation = 0
         self.uuid = self.config_entry.data["udn"]
 
     async def _async_setup(self):
         """Initialise client and subscribe to events."""
+
+        self.config_entry.async_create_background_task(
+            self.hass,
+            self._position_refresh_loop(),
+            name=f"{DOMAIN} position refresh",
+        )
 
         # Start local aiohttp server for NOTIFY callbacks
         app = web.Application()
@@ -351,11 +363,15 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
             service_type = "unknown"
 
         if service_type == "avtransport":
+            has_last_change = False
             for prop in root.findall(".//e:property", ns):
                 for child in prop:
                     if child.tag == "LastChange" and (child.text or "").strip():
                         assert child.text is not None
                         self._parse_last_change(child.text)
+                        has_last_change = True
+            if has_last_change:
+                self.request_position_refresh()
 
         elif service_type == "renderingcontrol":
             for prop in root.findall(".//e:property", ns):
@@ -371,6 +387,62 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         self.async_update_listeners()
 
         return web.Response(status=200)
+
+    @callback
+    def request_position_refresh(self) -> None:
+        """Invalidate stale positions and request an updated sample."""
+        self._position_generation += 1
+        self.media_position = None
+        self.media_position_updated_at = None
+        self._position_refresh_requested.set()
+
+    @staticmethod
+    def _parse_position(value: str) -> int | None:
+        """Parse a UPnP RelTime, treating unavailable values as unknown."""
+        match = re.fullmatch(r"(\d+):([0-5]\d):([0-5]\d)(?:\.\d+)?", value)
+        if not match:
+            return None
+        hours, minutes, seconds = (int(part) for part in match.groups())
+        return hours * 3600 + minutes * 60 + seconds
+
+    async def _position_refresh_loop(self) -> None:
+        """Fetch position on changes and periodically while playing."""
+        while True:
+            if self.data.get("state") == MediaPlayerState.PLAYING:
+                try:
+                    await asyncio.wait_for(
+                        self._position_refresh_requested.wait(),
+                        timeout=POSITION_REFRESH_SECONDS,
+                    )
+                except TimeoutError:
+                    pass
+            else:
+                await self._position_refresh_requested.wait()
+            self._position_refresh_requested.clear()
+            generation = self._position_generation
+            try:
+                async with asyncio.timeout(DEFAULT_TIMEOUT):
+                    position_info = await self.streamer.get_position_info()
+            except TimeoutError:
+                _LOGGER.warning("Timed out fetching playback position")
+                position_info = None
+            if generation != self._position_generation:
+                continue
+            raw_position = (
+                position_info.get("RelTime") if isinstance(position_info, dict) else None
+            )
+            position = (
+                self._parse_position(raw_position)
+                if isinstance(raw_position, str)
+                else None
+            )
+            if position is None:
+                _LOGGER.debug("Playback position unavailable: %s", raw_position)
+            self.media_position = position
+            self.media_position_updated_at = (
+                dt_util.utcnow() if position is not None else None
+            )
+            self.async_update_listeners()
 
     def _parse_rendering_control(self, val: str):
         """Parse RenderingControl LastChange XML for volume/mute only."""
@@ -523,7 +595,7 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
             if not isinstance(media_info, dict):
                 media_info = {}
 
-            return {
+            result = {
                 "volume": int(_vol),
                 "mute": bool(
                     int(mute_data.get("CurrentMute", int(self.data.get("mute", False))))
@@ -542,6 +614,8 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
                 "media_image_url": media_info.get("AlbumArtURI")
                 or self.data.get("media_image_url", ""),
             }
+            self.request_position_refresh()
+            return result
 
         except Exception as err:
             raise UpdateFailed(f"Error fetching data from streamer: {err}") from err
