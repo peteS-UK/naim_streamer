@@ -8,7 +8,7 @@
 A simple media player to control Naim NDX Streamers from Home Assistant.
 
 The original NDX only provides a basic UpNP interface with play, pause, stop etc. support. Although the metadata is shown for all sources, the commands only work with the UPnP input. However, if you select a remote emitter during setup, all of the buttons from the remote are implemented and work across all inputs.
-(from the core Infrared integration) during setup, all of the remote buttons are sent as RC5 commands and work across all inputs.
+
 ## Installation
 
 The preferred installation approach is via Home Assistant Community Store - aka [HACS](https://hacs.xyz/). The [repo](https://github.com/peteS-UK/naim_streamer) is installable as a [Custom Repo](https://hacs.xyz/docs/faq/custom_repositories) via HACS.
