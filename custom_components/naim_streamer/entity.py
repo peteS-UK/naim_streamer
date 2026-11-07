@@ -1,4 +1,4 @@
-"""Base class for Streamer Sensor entities."""
+"""Base class for Streamer entities."""
 
 import logging
 
@@ -12,7 +12,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class StreamerEntity(CoordinatorEntity[StreamerDataUpdateCoordinator]):
-    """Defines a base status sensor entity."""
+    """Defines a base streamer entity."""
 
     _attr_has_entity_name = True
 

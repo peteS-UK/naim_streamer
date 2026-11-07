@@ -6,7 +6,8 @@
     ],
     "config_flow": true,
     "dependencies": [
-        "ssdp"
+        "ssdp",
+        "infrared"
     ],
     "documentation": "https://github.com/peteS-UK/naim_streamer/blob/main/README.md",
     "iot_class": "local_push",
@@ -36,5 +37,5 @@
             "modelName": "NDS2"
         }
     ],
-    "version": "v1.2.1"
+    "version": "v2.0.0"
 }

@@ -1,64 +1,50 @@
 from __future__ import annotations
 
-from urllib.parse import urlparse, urljoin
-from typing import Any
+import logging
 import xml.etree.ElementTree as ET
+from typing import Any
+from urllib.parse import urljoin, urlparse
 
-import aiohttp
+import probatio
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.const import (
-    CONF_HOST,
-    CONF_NAME,
     ATTR_MANUFACTURER,
+    CONF_HOST,
     CONF_MODEL,
+    CONF_NAME,
     CONF_PORT,
 )
-from homeassistant.data_entry_flow import FlowResult
-
 from homeassistant.helpers import config_validation as cv
-
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     EntitySelector,
     EntitySelectorConfig,
-    SelectSelector,
-    SelectSelectorConfig,
-    SelectSelectorMode,
 )
+from homeassistant.helpers.service_info.ssdp import SsdpServiceInfo
 
 from .const import (
-    DOMAIN,
-    CONF_REMOTE_ENTITY,
-    CONF_RENDERING_CONTROL_URL,
     CONF_AV_TRANSPORT_URL,
     CONF_CONNECTION_MANAGER_URL,
-    CONF_REMOTE_TYPE,
+    CONF_INFRARED_ENTITY_ID,
+    CONF_RENDERING_CONTROL_URL,
+    DOMAIN,
 )
-
-
-import voluptuous as vol
-
-import logging
 
 _LOGGER = logging.getLogger(__name__)
 
-NDX_SCHEMA = vol.Schema({vol.Required(CONF_HOST): cv.string})
+NDX_SCHEMA = probatio.Schema({probatio.Required(CONF_HOST): cv.string})
 
 
-CONFIG_SCHEMA = vol.Schema(
+CONFIG_SCHEMA = probatio.Schema(
     {
-        vol.Required(CONF_NAME): cv.string,
-        vol.Required(CONF_HOST): cv.string,
-        vol.Required(CONF_PORT): cv.string,
-        vol.Required(ATTR_MANUFACTURER): cv.string,
-        vol.Required(CONF_MODEL): cv.string,
-        vol.Required(CONF_REMOTE_TYPE): SelectSelector(
-            SelectSelectorConfig(
-                mode=SelectSelectorMode.DROPDOWN,
-                options=["None", "Broadlink", "Tuya RC5", "Tuya Raw"],
-            )
-        ),
-        vol.Optional(CONF_REMOTE_ENTITY): EntitySelector(
-            EntitySelectorConfig(filter={"domain": "remote"})
+        probatio.Required(CONF_NAME): cv.string,
+        probatio.Required(CONF_HOST): cv.string,
+        probatio.Required(CONF_PORT): cv.string,
+        probatio.Required(ATTR_MANUFACTURER): cv.string,
+        probatio.Required(CONF_MODEL): cv.string,
+        probatio.Optional(CONF_INFRARED_ENTITY_ID): EntitySelector(
+            EntitySelectorConfig(domain="infrared")
         ),
     }
 )
@@ -77,38 +63,32 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Manual setup."""
-        errors: dict[str, str] = {}
         if user_input is not None:
-            try:
-                await self.validate_remote(user_input)
-            except ValueError:
-                errors["base"] = "data"
-            if not errors:
-                extras = {}
-                extras[CONF_RENDERING_CONTROL_URL] = (
-                    f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}/RenderingControl/ctrl"
-                )
-                extras[CONF_AV_TRANSPORT_URL] = (
-                    f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}/AVTransport/ctrl"
-                )
-                extras[CONF_CONNECTION_MANAGER_URL] = (
-                    f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}/ConnectionManager/ctrl"
-                )
-                extras["udn"] = (
-                    "naim_streamer_"
-                    + user_input[CONF_NAME].replace(" ", "_").replace("-", "_").lower()
-                )
-                extras["rendering_control_event_url"] = (
-                    f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}//RenderingControl/evt"
-                )
-                extras["av_transport_event_url"] = (
-                    f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}//AVTransport/evt"
-                )
-                return self.async_create_entry(
-                    title=user_input[CONF_HOST], data=user_input | extras
-                )
+            extras = {}
+            extras[CONF_RENDERING_CONTROL_URL] = (
+                f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}/RenderingControl/ctrl"
+            )
+            extras[CONF_AV_TRANSPORT_URL] = (
+                f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}/AVTransport/ctrl"
+            )
+            extras[CONF_CONNECTION_MANAGER_URL] = (
+                f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}/ConnectionManager/ctrl"
+            )
+            extras["udn"] = (
+                "naim_streamer_"
+                + user_input[CONF_NAME].replace(" ", "_").replace("-", "_").lower()
+            )
+            extras["rendering_control_event_url"] = (
+                f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}//RenderingControl/evt"
+            )
+            extras["av_transport_event_url"] = (
+                f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}//AVTransport/evt"
+            )
+            return self.async_create_entry(
+                title=user_input[CONF_HOST], data=user_input | extras
+            )
 
         return self.async_show_form(
             step_id="user",
@@ -120,13 +100,13 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_PORT: self.port or 8080,
                     ATTR_MANUFACTURER: self.manufacturer or "Naim Audio Ltd.",
                     CONF_MODEL: self.model or "NDX",
-                    CONF_REMOTE_TYPE: "None",
                 },
             ),
-            errors=errors,
         )
 
-    async def async_step_ssdp(self, discovery_info: dict[str, Any]) -> FlowResult:
+    async def async_step_ssdp(
+        self, discovery_info: SsdpServiceInfo
+    ) -> ConfigFlowResult:
         """Handle SSDP discovery."""
 
         location = discovery_info.upnp.get("ssdp_location")
@@ -153,9 +133,9 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         control_urls: dict[str, str] = {}
         if location:
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(location) as resp:
-                        xml_text = await resp.text()
+                session = async_get_clientsession(self.hass)
+                async with session.get(location) as resp:
+                    xml_text = await resp.text()
 
                 root = ET.fromstring(xml_text)
                 ns = {"upnp": "urn:schemas-upnp-org:device-1-0"}
@@ -219,47 +199,26 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return await self.async_step_confirm()
 
-    async def validate_remote(self, data: dict) -> None:
-        if CONF_REMOTE_TYPE not in data.keys():
-            data[CONF_REMOTE_TYPE] = "None"
-
-        if CONF_REMOTE_ENTITY not in data.keys():
-            data[CONF_REMOTE_ENTITY] = ""
-
-        if (len(data[CONF_REMOTE_ENTITY]) < 2) and (data[CONF_REMOTE_TYPE]) != "None":
-            # Manual entry requires host and name
-            raise ValueError("no_type")
-
-        if (data[CONF_REMOTE_TYPE]) == "None" and (len(data[CONF_REMOTE_ENTITY]) > 1):
-            raise ValueError("no_entity")
-
     async def async_step_confirm(self, user_input=None):
         """Ask user to confirm adding the device."""
-        errors: dict[str, str] = {}
         if user_input is not None:
-            try:
-                await self.validate_remote(user_input)
-            except ValueError("no_type"):
-                errors["base"] = "data"
-            except ValueError("no_entity"):
-                errors["base"] = "entity"
-            if not errors:
-                # Input is valid, set data.
-                extras = {
-                    CONF_RENDERING_CONTROL_URL: self.data[CONF_RENDERING_CONTROL_URL],
-                    CONF_AV_TRANSPORT_URL: self.data[CONF_AV_TRANSPORT_URL],
-                    CONF_CONNECTION_MANAGER_URL: self.data[CONF_CONNECTION_MANAGER_URL],
-                    "udn": self.data["udn"],
-                    "rendering_control_event_url": self.data.get(
-                        "rendering_control_event_url"
-                    ),
-                    "av_transport_event_url": self.data.get("av_transport_event_url"),
-                }
+            extras = {
+                CONF_RENDERING_CONTROL_URL: self.data[CONF_RENDERING_CONTROL_URL],
+                CONF_AV_TRANSPORT_URL: self.data[CONF_AV_TRANSPORT_URL],
+                CONF_CONNECTION_MANAGER_URL: self.data[CONF_CONNECTION_MANAGER_URL],
+                "udn": self.data["udn"],
+                "rendering_control_event_url": self.data.get(
+                    "rendering_control_event_url"
+                ),
+                "av_transport_event_url": self.data.get("av_transport_event_url"),
+            }
 
-                return self.async_create_entry(
-                    title=self.context["title_placeholders"]["name"],
-                    data=user_input | extras,
-                )
+            return self.async_create_entry(
+                title=self.context.get("title_placeholders", {}).get(
+                    "name", "Naim Streamer"
+                ),
+                data=user_input | extras,
+            )
 
         return self.async_show_form(
             step_id="confirm",
@@ -271,9 +230,7 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_PORT: self.port or 8080,
                     ATTR_MANUFACTURER: self.manufacturer or "Naim Audio Ltd.",
                     CONF_MODEL: self.model or "NDX",
-                    CONF_REMOTE_TYPE: "None",
                 },
             ),
-            description_placeholders=self.context["title_placeholders"],
-            errors=errors,
+            description_placeholders=self.context.get("title_placeholders"),
         )

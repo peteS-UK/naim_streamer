@@ -1,22 +1,22 @@
+# pyright: reportIncompatibleVariableOverride=false
+
 from __future__ import annotations
 
 import logging
+import time
+from datetime import datetime
 
 from homeassistant import core
-from homeassistant.components.media_player import (
-    MediaPlayerEntity,
+from homeassistant.components.media_player import MediaPlayerEntity
+from homeassistant.components.media_player.const import (
     MediaPlayerEntityFeature,
     MediaPlayerState,
 )
-
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import (
-    SOURCES,
-)
-
-from .coordinator import StreamerDataUpdateCoordinator
+from .coordinator import StreamerConfigEntry, StreamerDataUpdateCoordinator
 from .entity import StreamerEntity
+from .ir_codes import SOURCE_TO_KEY, SOURCES
 
 TRANSPORT_TO_HA_STATE = {
     "STOPPED": MediaPlayerState.IDLE,
@@ -48,7 +48,7 @@ SUPPORT_STREAMER_VOLUME = (
 
 async def async_setup_entry(
     hass: core.HomeAssistant,
-    config_entry: StreamerEntity,
+    config_entry: StreamerConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Setup Media Player"""
@@ -72,7 +72,7 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
         self._attr_unique_id = coordinator.uuid
         self._attr_name = None
         self._attr_has_entity_name = True
-        self._remote_entity = coordinator.remote_entity
+        self._remote_entity = coordinator.infrared_entity_id
 
     @property
     def should_poll(self):
@@ -166,11 +166,11 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
 
     async def async_media_next_track(self):
         """Skip to the next track and confirm actual state."""
-        await self.coordinator.next_track()
+        await self.coordinator.async_next_track()
 
     async def async_media_previous_track(self):
         """Skip to the previous track and confirm actual state."""
-        await self.coordinator.previous_track()
+        await self.coordinator.async_previous_track()
 
     async def async_play_media(self, media_type: str, media_id: str, **kwargs):
         """Handle play_media service calls."""
@@ -208,10 +208,22 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
         """Return the duration in seconds."""
         return self.coordinator.data.get("media_duration")
 
-    async def async_media_seek(self, position: int):
+    @property
+    def media_position(self) -> int | None:
+        """Return the most recently sampled playback position in seconds."""
+        return self.coordinator.media_position
+
+    @property
+    def media_position_updated_at(self) -> datetime | None:
+        """Return when the playback position was sampled."""
+        return self.coordinator.media_position_updated_at
+
+    async def async_media_seek(self, position: float):
         """Handle media_seek service calls (position in seconds)."""
-        await self._streamer.seek(position)
+        _time = time.strftime("%H:%M:%S", time.gmtime(position))
+        await self._streamer.seek(target=_time)
+        self.coordinator.request_position_refresh()
 
     async def async_select_source(self, source: str) -> None:
         if self._remote_entity:
-            await self.coordinator.async_send_command(source.lower())
+            await self.coordinator.async_send_command(SOURCE_TO_KEY[source])
