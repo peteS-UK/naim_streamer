@@ -7,7 +7,7 @@ from urllib.parse import urljoin, urlparse
 
 import probatio
 from homeassistant import config_entries
-from homeassistant.config_entries import ConfigFlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
 from homeassistant.const import (
     ATTR_MANUFACTURER,
     CONF_HOST,
@@ -20,6 +20,9 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     EntitySelector,
     EntitySelectorConfig,
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
 )
 from homeassistant.helpers.service_info.ssdp import SsdpServiceInfo
 
@@ -27,8 +30,12 @@ from .const import (
     CONF_AV_TRANSPORT_URL,
     CONF_CONNECTION_MANAGER_URL,
     CONF_INFRARED_ENTITY_ID,
+    CONF_PREAMP_IR_FRAMES,
     CONF_RENDERING_CONTROL_URL,
+    CONF_STREAMER_IR_FRAMES,
+    DEFAULT_IR_FRAMES,
     DOMAIN,
+    MAX_IR_FRAMES,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -60,6 +67,11 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     port = 8080
 
     VERSION = 1
+
+    @staticmethod
+    def async_get_options_flow(config_entry: ConfigEntry) -> config_entries.OptionsFlow:
+        """Return the options flow for this entry."""
+        return NaimStreamerOptionsFlow()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -233,4 +245,46 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 },
             ),
             description_placeholders=self.context.get("title_placeholders"),
+        )
+
+
+class NaimStreamerOptionsFlow(config_entries.OptionsFlow):
+    """Configure IR transmission options."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Set the number of frames sent for each device."""
+        if user_input is not None:
+            return self.async_create_entry(
+                title="", data={**self.config_entry.options, **user_input}
+            )
+
+        frame_selector = NumberSelector(
+            NumberSelectorConfig(min=1, max=MAX_IR_FRAMES, mode=NumberSelectorMode.BOX)
+        )
+        frame_count = probatio.All(
+            frame_selector,
+            probatio.In(range(1, MAX_IR_FRAMES + 1)),
+            probatio.Coerce(int),
+        )
+        schema = probatio.Schema(
+            {
+                probatio.Required(CONF_STREAMER_IR_FRAMES): frame_count,
+                probatio.Required(CONF_PREAMP_IR_FRAMES): frame_count,
+            }
+        )
+        return self.async_show_form(
+            step_id="init",
+            data_schema=self.add_suggested_values_to_schema(
+                schema,
+                {
+                    CONF_STREAMER_IR_FRAMES: self.config_entry.options.get(
+                        CONF_STREAMER_IR_FRAMES, DEFAULT_IR_FRAMES
+                    ),
+                    CONF_PREAMP_IR_FRAMES: self.config_entry.options.get(
+                        CONF_PREAMP_IR_FRAMES, DEFAULT_IR_FRAMES
+                    ),
+                },
+            ),
         )

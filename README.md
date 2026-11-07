@@ -35,8 +35,23 @@ The NDX doesn't actually have any digital volume control. The volume buttons on 
 
 IR commands alternate the RC5 toggle bit on each press, independently for the
 streamer and preamp addresses. The toggle state resets when the integration reloads.
-Volume and mute send two identical RC5 frames per press, matching the repeated
-signals in the original learned preamp codes.
+Streamer and preamp commands default to two identical RC5 frames per press, with
+the same toggle bit in each frame. In the integration's options, you can set the
+total number of frames independently for the streamer and preamp (1–10,
+including the initial frame). Changes apply to the next IR command.
+
+To troubleshoot IR commands, enable debug logging for the integration:
+
+```yaml
+logger:
+  logs:
+    custom_components.naim_streamer.coordinator: debug
+```
+
+The log shows the command, emitter, RC5 address, command number, toggle, frame
+count, carrier frequency and generated pulse timings in microseconds. Positive
+timings are IR bursts; negative timings are gaps. These are the timings handed
+to the infrared emitter, not a measurement of what the hardware transmitted.
 
 The streamer remote uses a combined Play/Pause button, rather than a separate
 Pause button.

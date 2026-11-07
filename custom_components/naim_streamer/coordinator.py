@@ -25,8 +25,14 @@ from homeassistant.util import dt as dt_util
 from infrared_protocols.commands.rc5 import RC5Command
 from lxml import etree
 
-from .const import CONF_INFRARED_ENTITY_ID, DOMAIN
-from .ir_codes import COMMANDS
+from .const import (
+    CONF_INFRARED_ENTITY_ID,
+    CONF_PREAMP_IR_FRAMES,
+    CONF_STREAMER_IR_FRAMES,
+    DEFAULT_IR_FRAMES,
+    DOMAIN,
+)
+from .ir_codes import COMMANDS, PREAMP_ADDRESS, STREAMER_ADDRESS
 from .naim_streamer_client import NaimStreamerClient
 
 TRANSPORT_TO_HA_STATE = {
@@ -191,8 +197,28 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
                 command=template.command,
                 toggle=toggle,
                 modulation=template.modulation,
-                repeat_count=template.repeat_count,
+                repeat_count=self.config_entry.options.get(
+                    {
+                        STREAMER_ADDRESS: CONF_STREAMER_IR_FRAMES,
+                        PREAMP_ADDRESS: CONF_PREAMP_IR_FRAMES,
+                    }[template.address],
+                    DEFAULT_IR_FRAMES,
+                )
+                - 1,
             )
+            if _LOGGER.isEnabledFor(logging.DEBUG):
+                _LOGGER.debug(
+                    "Sending RC5 command %s to %s: address=%d command=%d toggle=%d "
+                    "frames=%d carrier=%d Hz timings_us=%s",
+                    command,
+                    self.infrared_entity_id,
+                    rc5_command.address,
+                    rc5_command.command,
+                    rc5_command.toggle,
+                    rc5_command.repeat_count + 1,
+                    rc5_command.modulation,
+                    rc5_command.get_raw_timings(),
+                )
             await async_send_command(self.hass, self.infrared_entity_id, rc5_command)
 
     async def async_play(self):
