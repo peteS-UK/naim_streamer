@@ -1,7 +1,7 @@
 # Naim Streamer Integration for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
-[![maintained](https://img.shields.io/maintenance/yes/2025.svg)](#)
+[![maintained](https://img.shields.io/maintenance/yes/2026.svg)](#)
 [![maintainer](https://img.shields.io/badge/maintainer-%20%40petes--UK-blue.svg)](#)
 [![version](https://img.shields.io/github/v/release/peteS-UK/naim_streamer)](#)
 
@@ -10,7 +10,7 @@ A simple media player to control Naim Streamers from Home Assistant.
 It's initially tested with NDX.
 
 The original NDX only provides a basic UpNP interface with play, pause, stop etc. support. Although the metadata is shown for all sources, the commands only work with the UPnP input. However, if you select a Broadlink or Tuya remote during setup, all of the buttons from the remote are implemented and work across all inputs.
-
+(from the core Infrared integration) during setup, all of the remote buttons are sent as RC5 commands and work across all inputs.
 ## Installation
 
 The preferred installation approach is via Home Assistant Community Store - aka [HACS](https://hacs.xyz/). The [repo](https://github.com/peteS-UK/naim_streamer) is installable as a [Custom Repo](https://hacs.xyz/docs/faq/custom_repositories) via HACS.
@@ -32,3 +32,16 @@ The Naim streamers have no published API, and early devices such as the NDX have
 ## Volume Control
 
 The NDX doesn't actually have any digital volume control. The volume buttons on the remote as designed to control the volume on a Naim pre-amp. This is actually the preferred designed to maintain maximum sound quality. So, the volume control buttons only affect the volume if you have a Naim pre-amp. They are only available if you have a remote entity defined.
+
+IR commands alternate the RC5 toggle bit on each press, independently for the
+streamer and preamp addresses. The toggle state resets when the integration reloads.
+Volume and mute send two identical RC5 frames per press, matching the repeated
+signals in the original learned preamp codes.
+
+The streamer remote uses a combined Play/Pause button, rather than a separate
+Pause button.
+
+Playback position is sampled from the streamer's UPnP `GetPositionInfo`
+response when playback changes and every 30 seconds while playing. Home
+Assistant displays progress between samples; position is unavailable for
+inputs that do not report `RelTime`.

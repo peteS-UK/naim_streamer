@@ -11,9 +11,9 @@ from homeassistant.components.button import ButtonEntity, ButtonEntityDescriptio
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import StreamerConfigEntry
-from .coordinator import StreamerDataUpdateCoordinator
+from .coordinator import StreamerConfigEntry, StreamerDataUpdateCoordinator
 from .entity import StreamerEntity
+from .ir_codes import BUTTONS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,85 +23,10 @@ class StreamerButtonEntityDescription(ButtonEntityDescription):
     """Squeezebox Button description."""
 
 
-STREAMER_BUTTON_ENTITIES: tuple[StreamerButtonEntityDescription, ...] = (
-    StreamerButtonEntityDescription(
-        key="play",
-        icon="mdi:play",
-        name="Play",
-    ),
-    StreamerButtonEntityDescription(
-        name="Pause",
-        icon="mdi:pause",
-        key="pause",
-    ),
-    StreamerButtonEntityDescription(
-        key="stop",
-        icon="mdi:stop",
-        name="Stop",
-    ),
-    StreamerButtonEntityDescription(
-        key="next",
-        icon="mdi:skip-next",
-        name="Next",
-    ),
-    StreamerButtonEntityDescription(
-        key="previous",
-        icon="mdi:skip-previous",
-        name="Previous",
-    ),
-    StreamerButtonEntityDescription(
-        key="mute",
-        icon="mdi:volume-off",
-        name="Mute",
-    ),
-    StreamerButtonEntityDescription(
-        key="vol+",
-        icon="mdi:volume-plus",
-        name="Volume Up",
-    ),
-    StreamerButtonEntityDescription(
-        key="vol-",
-        icon="mdi:volume-minus",
-        name="Volume Down",
-    ),
-    StreamerButtonEntityDescription(name="Display", key="disp"),
-    StreamerButtonEntityDescription(name="One", key="one", icon="mdi:numeric-1"),
-    StreamerButtonEntityDescription(name="Two", key="two", icon="mdi:numeric-2"),
-    StreamerButtonEntityDescription(name="Three", key="three", icon="mdi:numeric-3"),
-    StreamerButtonEntityDescription(name="Four", key="four", icon="mdi:numeric-4"),
-    StreamerButtonEntityDescription(name="Five", key="five", icon="mdi:numeric-5"),
-    StreamerButtonEntityDescription(name="Six", key="six", icon="mdi:numeric-6"),
-    StreamerButtonEntityDescription(name="Seven", key="seven", icon="mdi:numeric-7"),
-    StreamerButtonEntityDescription(name="Eight", key="eight", icon="mdi:numeric-8"),
-    StreamerButtonEntityDescription(name="Nine", key="nine", icon="mdi:numeric-9"),
-    StreamerButtonEntityDescription(name="Zero", key="zero", icon="mdi:numeric-0"),
-    StreamerButtonEntityDescription(name="Preset", key="preset"),
-    StreamerButtonEntityDescription(name="Store", key="store", icon="mdi:bookmark"),
-    StreamerButtonEntityDescription(name="OK", key="ok"),
-    StreamerButtonEntityDescription(name="Up", key="up", icon="mdi:arrow-up"),
-    StreamerButtonEntityDescription(name="Down", key="down", icon="mdi:arrow-down"),
-    StreamerButtonEntityDescription(name="Left", key="left", icon="mdi:arrow-left"),
-    StreamerButtonEntityDescription(name="Right", key="right", icon="mdi:arrow-right"),
-    StreamerButtonEntityDescription(name="Shuffle", key="shuffle", icon="mdi:shuffle"),
-    StreamerButtonEntityDescription(name="Repeat", key="repeat", icon="mdi:repeat"),
-    StreamerButtonEntityDescription(
-        name="Info", key="info", icon="mdi:information-box"
-    ),
-    StreamerButtonEntityDescription(name="Setup", key="setup"),
-    StreamerButtonEntityDescription(name="Rewind", key="rewind", icon="mdi:rewind"),
-    StreamerButtonEntityDescription(
-        name="Fast Forward", key="fastforward", icon="mdi:fast-forward"
-    ),
-    StreamerButtonEntityDescription(name="CD", key="cd", icon="mdi:disc"),
-    StreamerButtonEntityDescription(name="TV", key="tv", icon="mdi:television"),
-    StreamerButtonEntityDescription(name="Radio", key="radio", icon="mdi:radio"),
-    StreamerButtonEntityDescription(name="AUX", key="aux"),
-    StreamerButtonEntityDescription(name="PC", key="pc", icon="mdi:laptop"),
-    StreamerButtonEntityDescription(name="HDD", key="hdd", icon="mdi:harddisk"),
-    StreamerButtonEntityDescription(name="iPod", key="ipod", icon="mdi:ipod"),
-    StreamerButtonEntityDescription(
-        name="Exit", key="exit", icon="mdi:keyboard-return"
-    ),
+STREAMER_BUTTON_ENTITIES: tuple[StreamerButtonEntityDescription, ...] = tuple(
+    StreamerButtonEntityDescription(key=b.key, name=b.name, icon=b.icon)
+    for b in BUTTONS
+    if b.has_button
 )
 
 

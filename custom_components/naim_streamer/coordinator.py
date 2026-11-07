@@ -1,4 +1,4 @@
-"""Coordinator for Naim Streamer integration."""
+﻿"""Coordinator for Naim Streamer integration."""
 
 import asyncio
 import html
@@ -7,25 +7,26 @@ import re
 import socket
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, cast
 from urllib.parse import urljoin
 
-from aiohttp import ClientSession, web
+from aiohttp import ClientTimeout, web
+from homeassistant.components.infrared import async_send_command
 from homeassistant.components.media_player.const import MediaPlayerState
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_MANUFACTURER, CONF_MODEL, CONF_NAME, CONF_PORT
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
+from infrared_protocols.commands.rc5 import RC5Command
 from lxml import etree
 
-from .const import (
-    BROADLINK_COMMANDS,
-    CONF_REMOTE_ENTITY,
-    CONF_REMOTE_TYPE,
-    TUYA_COMMANDS,
-)
+from .const import CONF_INFRARED_ENTITY_ID, DOMAIN
+from .ir_codes import COMMANDS
 from .naim_streamer_client import NaimStreamerClient
 
 TRANSPORT_TO_HA_STATE = {
@@ -45,6 +46,8 @@ class StreamerData:
 type StreamerConfigEntry = ConfigEntry[StreamerData]
 
 DEFAULT_TIMEOUT = 10
+NOTIFY_WAIT_SECONDS = 30
+POSITION_REFRESH_SECONDS = 30
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -64,7 +67,9 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         )
         self.hass = hass
         self.config_entry = config_entry
+        self._session = async_get_clientsession(hass)
         self.streamer = NaimStreamerClient(
+            session=self._session,
             name=self.config_entry.data["name"],
             udn=self.config_entry.data["udn"],
             manufacturer=self.config_entry.data[ATTR_MANUFACTURER],
@@ -79,13 +84,28 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         self.sid_rc = None
         self._runner = None
         self._site = None
+        self._callback_url = ""
+        self._notify_received = False
+        self._warned_no_notify = False
+        self._notify_watch = None
         self.data = {}
-        self.remote_entity = config_entry.data.get(CONF_REMOTE_ENTITY)
-        self.remote_type = config_entry.data.get(CONF_REMOTE_TYPE)
+        self.infrared_entity_id = config_entry.data.get(CONF_INFRARED_ENTITY_ID)
+        self._ir_toggle_by_address: dict[int, int] = {}
+        self._ir_send_lock = asyncio.Lock()
+        self.media_position: int | None = None
+        self.media_position_updated_at: datetime | None = None
+        self._position_refresh_requested = asyncio.Event()
+        self._position_generation = 0
         self.uuid = self.config_entry.data["udn"]
 
     async def _async_setup(self):
         """Initialise client and subscribe to events."""
+
+        self.config_entry.async_create_background_task(
+            self.hass,
+            self._position_refresh_loop(),
+            name=f"{DOMAIN} position refresh",
+        )
 
         # Start local aiohttp server for NOTIFY callbacks
         app = web.Application()
@@ -100,7 +120,7 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         local_ip = self._get_local_ip(self.streamer.host)
 
         callback_url = f"http://{local_ip}:{port}/upnp/event"
-
+        self._callback_url = callback_url
         _LOGGER.debug("Callback URL: %s", callback_url)
 
         _LOGGER.debug("Config entry data: %s", self.config_entry.data)
@@ -122,9 +142,14 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
                 self.config_entry.data["rendering_control_event_url"], callback_url
             )
             if self.sid_av and self.sid_rc:
-                # Both subscriptions healthy — go push‑only
-                self.update_interval = None
-            self._renew_task = asyncio.create_task(self._renew_loop(callback_url))
+                self._after_subscribe()
+            else:
+                self._apply_poll_mode()
+            self.config_entry.async_create_background_task(
+                self.hass,
+                self._renew_loop(callback_url),
+                name=f"{DOMAIN} subscription renewal",
+            )
         except Exception:
             _LOGGER.exception("Subscription failed, using fast poll:")
             self.update_interval = timedelta(seconds=30)
@@ -145,51 +170,33 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
             await self.async_next_track()
         elif command == "previous":
             await self.async_previous_track()
-        elif self.remote_entity:
+        elif self.infrared_entity_id:
             await self._send_remote_command(command)
         else:
             raise ServiceValidationError(
-                f"{command} is only supported with a remote entity"
+                f"{command} is only supported with an infrared emitter"
             )
 
     async def _send_remote_command(self, command):
-        if self.remote_type == "Tuya RC5":
-            await self.hass.services.async_call(
-                "remote",
-                "send_command",
-                {
-                    "entity_id": self.remote_entity,
-                    "num_repeats": "1",
-                    "delay_secs": "0.4",
-                    "command": f"{TUYA_COMMANDS[command]['rc5']}",
-                },
+        if command not in COMMANDS:
+            raise ServiceValidationError(f"Unknown command: {command}")
+        if not self.infrared_entity_id:
+            raise ServiceValidationError("An infrared emitter is required")
+        template = COMMANDS[command]
+        async with self._ir_send_lock:
+            toggle = 1 - self._ir_toggle_by_address.get(template.address, 1)
+            self._ir_toggle_by_address[template.address] = toggle
+            rc5_command = RC5Command(
+                address=template.address,
+                command=template.command,
+                toggle=toggle,
+                modulation=template.modulation,
+                repeat_count=template.repeat_count,
             )
-        if self.remote_type == "Tuya Raw":
-            await self.hass.services.async_call(
-                "remote",
-                "send_command",
-                {
-                    "entity_id": self.remote_entity,
-                    "num_repeats": "1",
-                    "delay_secs": "0.4",
-                    "command": f"{TUYA_COMMANDS[command]['raw']}",
-                },
-            )
-
-        if self.remote_type == "Broadlink":
-            await self.hass.services.async_call(
-                "remote",
-                "send_command",
-                {
-                    "entity_id": self.remote_entity,
-                    "num_repeats": "1",
-                    "delay_secs": "0.4",
-                    "command": f"b64:{BROADLINK_COMMANDS[command]}",
-                },
-            )
+            await async_send_command(self.hass, self.infrared_entity_id, rc5_command)
 
     async def async_play(self):
-        if self.remote_entity:
+        if self.infrared_entity_id:
             await self._send_remote_command("play")
         else:
             if not self.streamer.last_uri or self.streamer.status == "ERROR_OCCURRED":
@@ -208,53 +215,90 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def async_pause(self):
         """Pause and confirm."""
-        if self.remote_entity:
-            await self._send_remote_command("pause")
+        if self.infrared_entity_id:
+            await self._send_remote_command("play")
         else:
             await self.streamer.pause()
 
     async def async_volume_up(self):
         """Pause and confirm."""
-        if self.remote_entity:
+        if self.infrared_entity_id:
             await self._send_remote_command("vol+")
 
     async def async_volume_down(self):
         """Pause and confirm."""
-        if self.remote_entity:
+        if self.infrared_entity_id:
             await self._send_remote_command("vol-")
 
     async def async_mute_toggle(self):
         """Pause and confirm."""
-        if self.remote_entity:
+        if self.infrared_entity_id:
             await self._send_remote_command("mute")
 
     async def async_stop(self):
         """Stop and confirm."""
-        if self.remote_entity:
+        if self.infrared_entity_id:
             await self._send_remote_command("stop")
         else:
             await self.streamer.stop()
 
     async def async_next_track(self):
         """Skip to the next track and confirm actual state."""
-        if self.remote_entity:
+        if self.infrared_entity_id:
             await self._send_remote_command("next")
         else:
             await self.streamer.next()
 
     async def async_previous_track(self):
         """Skip to the previous track and confirm actual state."""
-        if self.remote_entity:
+        if self.infrared_entity_id:
             await self._send_remote_command("previous")
         else:
             await self.streamer.previous()
 
+    def _apply_poll_mode(self) -> None:
+        """Poll as a fallback unless subscriptions work and events are arriving."""
+        if self.sid_av and self.sid_rc and self._notify_received:
+            self.update_interval = None
+        else:
+            self.update_interval = timedelta(seconds=30)
+
+    def _after_subscribe(self) -> None:
+        """Reset event tracking after a (re)subscribe and watch for the first NOTIFY."""
+        self._notify_received = False
+        self._apply_poll_mode()
+        if self._notify_watch:
+            self._notify_watch()
+        self._notify_watch = async_call_later(
+            self.hass, NOTIFY_WAIT_SECONDS, self._check_notify_received
+        )
+
+    @callback
+    def _check_notify_received(self, _now) -> None:
+        self._notify_watch = None
+        if self._notify_received:
+            return
+        message = (
+            "No event received from the streamer %s s after subscribing; "
+            "it may be unable to reach Home Assistant at %s. "
+            "Falling back to polling"
+        )
+        if self._warned_no_notify:
+            _LOGGER.debug(message, NOTIFY_WAIT_SECONDS, self._callback_url)
+        else:
+            self._warned_no_notify = True
+            _LOGGER.warning(message, NOTIFY_WAIT_SECONDS, self._callback_url)
+
+    def _renew_interval(self, requested: int) -> float:
+        """Renew at half the lifetime the device granted (or requested if unknown)."""
+        lifetime = self.streamer.subscription_timeout or requested
+        return max(15, min(requested - 60, lifetime / 2))
+
     async def _renew_loop(self, callback_url: str):
         timeout = 300
-        renew_interval = timeout - 60
         try:
             while True:
-                await asyncio.sleep(renew_interval)
+                await asyncio.sleep(self._renew_interval(timeout))
                 try:
                     if self.sid_av:
                         self.sid_av = await self.streamer.renew_subscription(
@@ -268,14 +312,9 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
                             self.sid_rc,
                             timeout,
                         )
-                    if self.sid_av and self.sid_rc:
-                        # Both healthy — push‑only
-                        self.update_interval = None
-                    else:
-                        # One missing — fast poll
-                        self.update_interval = timedelta(seconds=30)
+                    self._apply_poll_mode()
                 except Exception:
-                    _LOGGER.exception("Renewal failed.")
+                    _LOGGER.warning("Renewal failed, re-subscribing:", exc_info=True)
                     # Try full re‑subscribe
                     try:
                         self.sid_av = await self.streamer.subscribe_service(
@@ -288,10 +327,7 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
                             callback_url,
                             timeout,
                         )
-                        if self.sid_av and self.sid_rc:
-                            self.update_interval = None
-                        else:
-                            self.update_interval = timedelta(seconds=30)
+                        self._after_subscribe()
                     except Exception:
                         _LOGGER.exception("Re‑subscribe failed:")
                         self.update_interval = timedelta(seconds=30)
@@ -302,6 +338,11 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
     async def _handle_notify(self, request):
         body = await request.text()
         _LOGGER.debug("Received from %s NOTIFY:\n%s", request.remote, body)
+
+        if not self._notify_received:
+            self._notify_received = True
+            self._warned_no_notify = False
+            self._apply_poll_mode()
 
         ns = {"e": "urn:schemas-upnp-org:event-1-0"}
 
@@ -322,11 +363,15 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
             service_type = "unknown"
 
         if service_type == "avtransport":
+            has_last_change = False
             for prop in root.findall(".//e:property", ns):
                 for child in prop:
                     if child.tag == "LastChange" and (child.text or "").strip():
                         assert child.text is not None
                         self._parse_last_change(child.text)
+                        has_last_change = True
+            if has_last_change:
+                self.request_position_refresh()
 
         elif service_type == "renderingcontrol":
             for prop in root.findall(".//e:property", ns):
@@ -342,6 +387,62 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         self.async_update_listeners()
 
         return web.Response(status=200)
+
+    @callback
+    def request_position_refresh(self) -> None:
+        """Invalidate stale positions and request an updated sample."""
+        self._position_generation += 1
+        self.media_position = None
+        self.media_position_updated_at = None
+        self._position_refresh_requested.set()
+
+    @staticmethod
+    def _parse_position(value: str) -> int | None:
+        """Parse a UPnP RelTime, treating unavailable values as unknown."""
+        match = re.fullmatch(r"(\d+):([0-5]\d):([0-5]\d)(?:\.\d+)?", value)
+        if not match:
+            return None
+        hours, minutes, seconds = (int(part) for part in match.groups())
+        return hours * 3600 + minutes * 60 + seconds
+
+    async def _position_refresh_loop(self) -> None:
+        """Fetch position on changes and periodically while playing."""
+        while True:
+            if self.data.get("state") == MediaPlayerState.PLAYING:
+                try:
+                    await asyncio.wait_for(
+                        self._position_refresh_requested.wait(),
+                        timeout=POSITION_REFRESH_SECONDS,
+                    )
+                except TimeoutError:
+                    pass
+            else:
+                await self._position_refresh_requested.wait()
+            self._position_refresh_requested.clear()
+            generation = self._position_generation
+            try:
+                async with asyncio.timeout(DEFAULT_TIMEOUT):
+                    position_info = await self.streamer.get_position_info()
+            except TimeoutError:
+                _LOGGER.warning("Timed out fetching playback position")
+                position_info = None
+            if generation != self._position_generation:
+                continue
+            raw_position = (
+                position_info.get("RelTime") if isinstance(position_info, dict) else None
+            )
+            position = (
+                self._parse_position(raw_position)
+                if isinstance(raw_position, str)
+                else None
+            )
+            if position is None:
+                _LOGGER.debug("Playback position unavailable: %s", raw_position)
+            self.media_position = position
+            self.media_position_updated_at = (
+                dt_util.utcnow() if position is not None else None
+            )
+            self.async_update_listeners()
 
     def _parse_rendering_control(self, val: str):
         """Parse RenderingControl LastChange XML for volume/mute only."""
@@ -494,7 +595,7 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
             if not isinstance(media_info, dict):
                 media_info = {}
 
-            return {
+            result = {
                 "volume": int(_vol),
                 "mute": bool(
                     int(mute_data.get("CurrentMute", int(self.data.get("mute", False))))
@@ -513,6 +614,8 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
                 "media_image_url": media_info.get("AlbumArtURI")
                 or self.data.get("media_image_url", ""),
             }
+            self.request_position_refresh()
+            return result
 
         except Exception as err:
             raise UpdateFailed(f"Error fetching data from streamer: {err}") from err
@@ -536,44 +639,38 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
             s.close()
 
     async def async_unload(self):
-        """Clean up subscriptions, stop renewal loop, and stop local server."""
-        # Cancel renewal loop if running
-        if (
-            hasattr(self, "_renew_task")
-            and self._renew_task
-            and not self._renew_task.done()
-        ):
-            self._renew_task.cancel()
-            try:
-                await self._renew_task
-            except asyncio.CancelledError:
-                pass
+        """Clean up subscriptions and stop the local server.
 
+        The renewal loop is a config entry background task, which HA cancels.
+        """
         # Unsubscribe from UPnP events
-        async with ClientSession() as session:
-            if self.sid_av:
-                try:
-                    async with session.request(
-                        "UNSUBSCRIBE",
-                        self.config_entry.data["av_transport_event_url"],
-                        headers={"SID": self.sid_av},
-                    ) as resp:
-                        _LOGGER.info("Unsubscribed from AVTransport: %s", resp.status)
-                except Exception:
-                    _LOGGER.exception("Failed to unsubscribe from AVTransport:")
+        if self._notify_watch:
+            self._notify_watch()
+            self._notify_watch = None
+        timeout = ClientTimeout(total=5)
+        if self.sid_av:
+            try:
+                async with self._session.request(
+                    "UNSUBSCRIBE",
+                    self.config_entry.data["av_transport_event_url"],
+                    headers={"SID": self.sid_av},
+                    timeout=timeout,
+                ) as resp:
+                    _LOGGER.info("Unsubscribed from AVTransport: %s", resp.status)
+            except Exception:
+                _LOGGER.exception("Failed to unsubscribe from AVTransport:")
 
-            if self.sid_rc:
-                try:
-                    async with session.request(
-                        "UNSUBSCRIBE",
-                        self.config_entry.data["rendering_control_event_url"],
-                        headers={"SID": self.sid_rc},
-                    ) as resp:
-                        _LOGGER.info(
-                            "Unsubscribed from RenderingControl: %s", resp.status
-                        )
-                except Exception:
-                    _LOGGER.exception("Failed to unsubscribe from RenderingControl:")
+        if self.sid_rc:
+            try:
+                async with self._session.request(
+                    "UNSUBSCRIBE",
+                    self.config_entry.data["rendering_control_event_url"],
+                    headers={"SID": self.sid_rc},
+                    timeout=timeout,
+                ) as resp:
+                    _LOGGER.info("Unsubscribed from RenderingControl: %s", resp.status)
+            except Exception:
+                _LOGGER.exception("Failed to unsubscribe from RenderingControl:")
 
         self.sid_av = None
         self.sid_rc = None

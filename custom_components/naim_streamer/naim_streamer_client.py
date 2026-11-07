@@ -14,6 +14,7 @@ class NaimStreamerClient:
 
     def __init__(
         self,
+        session: aiohttp.ClientSession,
         name: str,
         udn: str,
         manufacturer: str,
@@ -24,6 +25,7 @@ class NaimStreamerClient:
         connection_manager_url: str,
         host: str | None = None,
     ):
+        self._session = session
         self._name = name
         self._udn = udn
         self._manufacturer = manufacturer
@@ -38,7 +40,7 @@ class NaimStreamerClient:
         self.state = MediaPlayerState.IDLE
         self.status = ""
         self.base_url = f"http://{host}:{port}/"
-
+        self.subscription_timeout: int | None = None
     async def subscribe_service(
         self, event_url: str, callback_url: str, timeout: int = 300
     ) -> str:
@@ -55,7 +57,7 @@ class NaimStreamerClient:
             "NT": "upnp:event",
             "TIMEOUT": f"Second-{timeout}",
         }
-        async with aiohttp.ClientSession() as session, session.request(
+        async with self._session.request(
             "SUBSCRIBE", event_url, headers=headers
         ) as resp:
             _LOGGER.debug(
@@ -69,8 +71,20 @@ class NaimStreamerClient:
             sid = resp.headers.get("SID", "")
             if not sid:
                 _LOGGER.error("No SID returned for %s", event_url)
+            self._record_granted_timeout(resp.headers.get("TIMEOUT"))
             _LOGGER.debug("Subscribed to %s with SID %s", event_url, sid)
             return sid
+
+    def _record_granted_timeout(self, header: str | None) -> None:
+        """Track the shortest subscription lifetime the device actually granted."""
+        if not header or not header.lower().startswith("second-"):
+            return
+        try:
+            granted = int(header[7:])
+        except ValueError:
+            return
+        if self.subscription_timeout is None or granted < self.subscription_timeout:
+            self.subscription_timeout = granted
 
     async def renew_subscription(
         self, event_url: str, sid: str, timeout: int = 300
@@ -82,17 +96,20 @@ class NaimStreamerClient:
         :param sid: Subscription ID to renew
         :param timeout: Subscription timeout in seconds
         :return: New SID (may be same as old)
+        :raises RuntimeError: if the device rejects the renewal (e.g. 412 when the
+            subscription has expired), so the caller can re-subscribe
         """
         headers = {
             "SID": sid,
             "TIMEOUT": f"Second-{timeout}",
         }
-        async with aiohttp.ClientSession() as session, session.request(
+        async with self._session.request(
             "SUBSCRIBE", event_url, headers=headers
         ) as resp:
             if resp.status != 200:
-                _LOGGER.error("Renew failed (%s) for %s", resp.status, event_url)
+                raise RuntimeError(f"Renew failed ({resp.status}) for {event_url}")
             new_sid = resp.headers.get("SID", sid)
+            self._record_granted_timeout(resp.headers.get("TIMEOUT"))
             _LOGGER.debug("Renewed subscription %s -> %s", sid, new_sid)
             return new_sid
 
@@ -226,7 +243,7 @@ class NaimStreamerClient:
   </s:Body>
 </s:Envelope>"""
         try:
-            async with aiohttp.ClientSession() as session, session.post(
+            async with self._session.post(
                 url, data=envelope.encode("utf-8"), headers=headers
             ) as resp:
                 resp.raise_for_status()
