@@ -1,16 +1,14 @@
 # Naim Streamer Integration for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
-[![maintained](https://img.shields.io/maintenance/yes/2025.svg)](#)
+[![maintained](https://img.shields.io/maintenance/yes/2026.svg)](#)
 [![maintainer](https://img.shields.io/badge/maintainer-%20%40petes--UK-blue.svg)](#)
 [![version](https://img.shields.io/github/v/release/peteS-UK/naim_streamer)](#)
 
-A simple media player to control Naim Streamers from Home Assistant.
+A simple media player to control Naim NDX Streamers from Home Assistant.
 
-It's initially tested with NDX.
+The original NDX only provides a basic UpNP interface with play, pause, stop etc. support. Although the metadata is shown for all sources, the commands only work with the UPnP input. However, if you select a remote emitter during setup, all of the buttons from the remote are implemented and work across all inputs.
 
-The original NDX only provides a basic UpNP interface with play, pause, stop etc. support. Although the metadata is shown for all sources, the commands only work with the UPnP input. However, if you select a Broadlink or Tuya remote during setup, all of the buttons from the remote are implemented and work across all inputs.
-(from the core Infrared integration) during setup, all of the remote buttons are sent as RC5 commands and work across all inputs.
 ## Installation
 
 The preferred installation approach is via Home Assistant Community Store - aka [HACS](https://hacs.xyz/). The [repo](https://github.com/peteS-UK/naim_streamer) is installable as a [Custom Repo](https://hacs.xyz/docs/faq/custom_repositories) via HACS.
@@ -21,42 +19,28 @@ Once downloaded either via HACS or manually, restart your Home Assistant server.
 
 ## Configuration
 
-The integration should discover your steamer automatically and list it in the Discovered list in the integration page. If it's not discovered automatically, for example if your network has multiple subnets, then you can manually add the integration. In either case, you're presented with a configuration page.
+The integration should discover your steamer automatically and list it in the Discovered list in the integration page. If it's not discovered automatically, for example if your network has multiple subnets, then you can manually add the integration.Go into your Integrations (under Settings, Devices & Services), select Add Integration, and choose the NAIM Streamer integration, or click the shortcut button below (requires My Homeassistant configured).
+
+[![Add Integration to your Home Assistant
+instance.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=naim_cdx)
+
+This will display the configuration page
+
+In either case, you're presented with a configuration page.
+
 
 <img width="501" height="942" alt="image" src="https://github.com/user-attachments/assets/e714ce66-1320-41f7-8e5c-44ac8c25bdbe" />
 
+<img width="1166" height="1448" alt="image" src="https://github.com/user-attachments/assets/fdd373fe-e3aa-4ea1-965f-af04b806a7cd" />
+
 ## Remote Entity
 
-The Naim streamers have no published API, and early devices such as the NDX have no API to properly control the device, other than a SOAP interface required for UPnP control. As such, this integration is in two parts. Firstly, it implements the UPnP interface for playback controls and to receive metadata and status information from the streamer. Secondly, if you have a remote ir blaster device and you select it in the Configuration page, it implements all of the buttons from the remote control as buttons in Home Assistant.
+The Naim streamers have no published API, and early devices such as the NDX have no API to properly control the device, other than a SOAP interface required for UPnP control. As such, this integration is in two parts. Firstly, it implements the UPnP interface for playback controls and to receive metadata and status information from the streamer. Secondly, if you have a remote ir blaster device which is supported by the [Home Assistant Infrared Integration](https://www.home-assistant.io/integrations/infrared/) as an emitter, and you select it in the Configuration page, it implements all of the buttons from the remote control as buttons in Home Assistant.  The Infrared integration acts as an abstraction layer between this integration and other integrations which actually provide infrared entities, such as [Broadlink](https://www.home-assistant.io/integrations/broadlink/) or [Tuya Local](https://github.com/make-all/tuya-local).
 
 ## Volume Control
 
 The NDX doesn't actually have any digital volume control. The volume buttons on the remote as designed to control the volume on a Naim pre-amp. This is actually the preferred designed to maintain maximum sound quality. So, the volume control buttons only affect the volume if you have a Naim pre-amp. They are only available if you have a remote entity defined.
 
-IR commands alternate the RC5 toggle bit on each press, independently for the
-streamer and preamp addresses. The toggle state resets when the integration reloads.
-Streamer and preamp commands default to two identical RC5 frames per press, with
-the same toggle bit in each frame. In the integration's options, you can set the
-total number of frames independently for the streamer and preamp (1–10,
-including the initial frame). Changes apply to the next IR command.
-
-To troubleshoot IR commands, enable debug logging for the integration:
-
-```yaml
-logger:
-  logs:
-    custom_components.naim_streamer.coordinator: debug
-```
-
-The log shows the command, emitter, RC5 address, command number, toggle, frame
-count, carrier frequency and generated pulse timings in microseconds. Positive
-timings are IR bursts; negative timings are gaps. These are the timings handed
-to the infrared emitter, not a measurement of what the hardware transmitted.
-
 The streamer remote uses a combined Play/Pause button, rather than a separate
 Pause button.
 
-Playback position is sampled from the streamer's UPnP `GetPositionInfo`
-response when playback changes and every 30 seconds while playing. Home
-Assistant displays progress between samples; position is unavailable for
-inputs that do not report `RelTime`.
