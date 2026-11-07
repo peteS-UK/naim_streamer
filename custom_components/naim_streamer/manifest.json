@@ -1,17 +1,20 @@
 {
     "domain": "naim_streamer",
     "name": "Naim Streamer",
+    "codeowners": [
+        "@peteS-UK"
+    ],
     "config_flow": true,
     "dependencies": [
         "ssdp",
         "infrared"
     ],
-    "codeowners": [
-        "@peteS-UK"
-    ],
     "documentation": "https://github.com/peteS-UK/naim_streamer/blob/main/README.md",
     "iot_class": "local_push",
     "issue_tracker": "https://github.com/peteS-UK/naim_streamer/issues",
+    "requirements": [
+        "lxml>=4.9.0"
+    ],
     "ssdp": [
         {
             "st": "urn:schemas-upnp-org:device:MediaRenderer:1",
@@ -33,9 +36,6 @@
             "manufacturer": "Naim Audio Ltd.",
             "modelName": "NDS2"
         }
-    ],
-    "requirements": [
-        "lxml>=4.9.0"
     ],
     "version": "v2.0.0"
 }
