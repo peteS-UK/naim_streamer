@@ -5,11 +5,9 @@
 [![maintainer](https://img.shields.io/badge/maintainer-%20%40petes--UK-blue.svg)](#)
 [![version](https://img.shields.io/github/v/release/peteS-UK/naim_streamer)](#)
 
-A simple media player to control Naim Streamers from Home Assistant.
+A simple media player to control Naim NDX Streamers from Home Assistant.
 
-It's initially tested with NDX.
-
-The original NDX only provides a basic UpNP interface with play, pause, stop etc. support. Although the metadata is shown for all sources, the commands only work with the UPnP input. However, if you select a Broadlink or Tuya remote during setup, all of the buttons from the remote are implemented and work across all inputs.
+The original NDX only provides a basic UpNP interface with play, pause, stop etc. support. Although the metadata is shown for all sources, the commands only work with the UPnP input. However, if you select a remote emitter during setup, all of the buttons from the remote are implemented and work across all inputs.
 (from the core Infrared integration) during setup, all of the remote buttons are sent as RC5 commands and work across all inputs.
 ## Installation
 
@@ -23,25 +21,16 @@ Once downloaded either via HACS or manually, restart your Home Assistant server.
 
 The integration should discover your steamer automatically and list it in the Discovered list in the integration page. If it's not discovered automatically, for example if your network has multiple subnets, then you can manually add the integration. In either case, you're presented with a configuration page.
 
-<img width="501" height="942" alt="image" src="https://github.com/user-attachments/assets/e714ce66-1320-41f7-8e5c-44ac8c25bdbe" />
+<img width="1166" height="1448" alt="image" src="https://github.com/user-attachments/assets/fdd373fe-e3aa-4ea1-965f-af04b806a7cd" />
 
 ## Remote Entity
 
-The Naim streamers have no published API, and early devices such as the NDX have no API to properly control the device, other than a SOAP interface required for UPnP control. As such, this integration is in two parts. Firstly, it implements the UPnP interface for playback controls and to receive metadata and status information from the streamer. Secondly, if you have a remote ir blaster device and you select it in the Configuration page, it implements all of the buttons from the remote control as buttons in Home Assistant.
+The Naim streamers have no published API, and early devices such as the NDX have no API to properly control the device, other than a SOAP interface required for UPnP control. As such, this integration is in two parts. Firstly, it implements the UPnP interface for playback controls and to receive metadata and status information from the streamer. Secondly, if you have a remote ir blaster device which is supported by the [Home Assistant Infrared Integration](https://www.home-assistant.io/integrations/infrared/) as an emitter, and you select it in the Configuration page, it implements all of the buttons from the remote control as buttons in Home Assistant.  The Infrared integration acts as an abstraction layer between this integration and other integrations which actually provide infrared entities, such as [Broadlink](https://www.home-assistant.io/integrations/broadlink/) or [Tuya Local](https://github.com/make-all/tuya-local).
 
 ## Volume Control
 
 The NDX doesn't actually have any digital volume control. The volume buttons on the remote as designed to control the volume on a Naim pre-amp. This is actually the preferred designed to maintain maximum sound quality. So, the volume control buttons only affect the volume if you have a Naim pre-amp. They are only available if you have a remote entity defined.
 
-IR commands alternate the RC5 toggle bit on each press, independently for the
-streamer and preamp addresses. The toggle state resets when the integration reloads.
-Volume and mute send two identical RC5 frames per press, matching the repeated
-signals in the original learned preamp codes.
-
 The streamer remote uses a combined Play/Pause button, rather than a separate
 Pause button.
 
-Playback position is sampled from the streamer's UPnP `GetPositionInfo`
-response when playback changes and every 30 seconds while playing. Home
-Assistant displays progress between samples; position is unavailable for
-inputs that do not report `RelTime`.
