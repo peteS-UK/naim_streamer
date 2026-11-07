@@ -28,9 +28,6 @@ This will display the configuration page
 
 In either case, you're presented with a configuration page.
 
-
-<img width="501" height="942" alt="image" src="https://github.com/user-attachments/assets/e714ce66-1320-41f7-8e5c-44ac8c25bdbe" />
-
 <img width="1166" height="1448" alt="image" src="https://github.com/user-attachments/assets/fdd373fe-e3aa-4ea1-965f-af04b806a7cd" />
 
 ## Remote Entity
