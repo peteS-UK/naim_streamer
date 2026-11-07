@@ -1,4 +1,4 @@
-﻿"""Coordinator for Naim Streamer integration."""
+"""Coordinator for Naim Streamer integration."""
 
 import asyncio
 import html
