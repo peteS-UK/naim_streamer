@@ -48,3 +48,36 @@ The audio format sensor uses the MIME type from the current track's DIDL-Lite
 resource. It is unknown when the source does not supply a MIME type. The format
 may describe a container rather than its codec; unrecognized MIME types are
 displayed as reported.
+
+## Temporary infrared diagnostic
+
+The `naim_streamer.test_ir` action sends one Radio or Stop signal through the
+selected streamer's configured infrared emitter. In Developer Tools > Actions,
+select **Naim Streamer: Test infrared signal** and choose its media player.
+Choose `generated` to specify the RC5 toggle (0 or 1), total frames (1-10), and
+frame start-to-start interval (90-130 ms). The normal generated signal uses
+114 ms; 110 ms is close to the tester's recording. Choose `learned` to send
+timings reconstructed from that tester's Radio or Stop recording: both use
+three frames, with toggle 0 for Radio and toggle 1 for Stop. The toggle, frames
+and interval fields are ignored for `learned`.
+
+The reconstructed signal goes through the same Infrared and emitter integrations
+as the generated one. It is not necessarily byte-identical to the original
+Broadlink packet, and the 36 kHz carrier is an assumption. For an exact learned
+packet comparison, send the original using the Broadlink remote action.
+
+For a fair comparison, keep the same emitter position, wait for the streamer to
+settle between attempts, and record each outcome. Try both toggle values at 114
+ms and 110 ms with the same frame count, interleaving conditions and repeating
+each condition enough times to observe intermittent failures. Switch away from
+Radio between trials and record that intervening command too: receiver toggle
+state can depend on previous presses. Stop tests need playback restarted for
+each trial. Enable INFO logging for `custom_components.naim_streamer.ir_diagnostics`
+to record the test parameters and send completion. Completion means the emitter
+accepted the request, not that the streamer received or acted on it.
+
+```yaml
+logger:
+  logs:
+    custom_components.naim_streamer.ir_diagnostics: info
+```

@@ -11,8 +11,15 @@ from .coordinator import (
     StreamerData,
     StreamerDataUpdateCoordinator,
 )
+from .ir_diagnostics import async_register_ir_diagnostics
 
 _LOGGER = logging.getLogger(__name__)
+
+
+async def async_setup(hass: core.HomeAssistant, config: dict) -> bool:
+    """Register integration-wide services."""
+    async_register_ir_diagnostics(hass)
+    return True
 
 
 def _platforms_for_entry(config_entry: ConfigEntry) -> list[Platform]:
