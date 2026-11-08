@@ -17,9 +17,10 @@ _LOGGER = logging.getLogger(__name__)
 
 def _platforms_for_entry(config_entry: ConfigEntry) -> list[Platform]:
     """Return the platforms to load; buttons need an infrared emitter."""
+    platforms = [Platform.MEDIA_PLAYER, Platform.SENSOR]
     if config_entry.data.get(CONF_INFRARED_ENTITY_ID):
-        return [Platform.MEDIA_PLAYER, Platform.BUTTON]
-    return [Platform.MEDIA_PLAYER]
+        platforms.append(Platform.BUTTON)
+    return platforms
 
 
 def _update_legacy_remote_issue(

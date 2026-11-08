@@ -25,6 +25,7 @@ from homeassistant.util import dt as dt_util
 from infrared_protocols.commands.rc5 import RC5Command
 from lxml import etree
 
+from .audio_metadata import parse_audio_format
 from .const import (
     CONF_INFRARED_ENTITY_ID,
     CONF_PREAMP_IR_FRAMES,
@@ -102,6 +103,8 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         self.media_position_updated_at: datetime | None = None
         self._position_refresh_requested = asyncio.Event()
         self._position_generation = 0
+        self.audio_format: str | None = None
+        self._audio_track_uri: str | None = None
         self.uuid = self.config_entry.data["udn"]
 
     async def _async_setup(self):
@@ -454,6 +457,14 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
                 position_info = None
             if generation != self._position_generation:
                 continue
+            if isinstance(position_info, dict):
+                if "TrackURI" in position_info:
+                    self._update_audio_track_uri(position_info["TrackURI"])
+                track_metadata = position_info.get("TrackMetaData")
+                if isinstance(track_metadata, str) and track_metadata.strip().startswith(
+                    "<"
+                ):
+                    self._parse_audio_metadata(track_metadata)
             raw_position = (
                 position_info.get("RelTime") if isinstance(position_info, dict) else None
             )
@@ -494,12 +505,19 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.warning("Failed to parse RenderingControl XML (lxml): %s", e)
 
     def _parse_last_change(self, val: str):
+        track_uri = re.search(r'CurrentTrackURI\s+val="([^"]*)"', val)
+        if track_uri:
+            self._update_audio_track_uri(html.unescape(track_uri.group(1)))
+
         # Get raw CurrentTrackMetaData DIDL from the unparsed LastChange string
-        m = re.search(r'CurrentTrackMetaData\s+val="([^"]+)"', val)
+        m = re.search(r'CurrentTrackMetaData\s+val="([^"]*)"', val)
         if m:
             raw_val = m.group(1)
             didl_xml = html.unescape(html.unescape(raw_val))
-            self._parse_didl_metadata(didl_xml)
+            if didl_xml.strip() and didl_xml.strip() != "NOT_IMPLEMENTED":
+                self._parse_didl_metadata(didl_xml)
+            else:
+                self.audio_format = None
 
         # Get raw NextAVTransportURIMetaData DIDL
         m = re.search(r'NextAVTransportURIMetaData\s+val="([^"]+)"', val)
@@ -520,6 +538,9 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
 
         ts_elems = inst.xpath(".//*[local-name()='TransportState']")
         if ts_elems:
+            if ts_elems[0].attrib.get("val", "").upper() == "NO_MEDIA_PRESENT":
+                self.audio_format = None
+                self._audio_track_uri = None
             self.data["state"] = TRANSPORT_TO_HA_STATE.get(
                 ts_elems[0].attrib.get("val", "").upper(), MediaPlayerState.IDLE
             )
@@ -543,6 +564,11 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
 
             parser = etree.XMLParser(recover=True)
             didl_root = etree.fromstring(didl_xml.encode("utf-8"), parser=parser)
+            if didl_root is None:
+                _LOGGER.warning("Failed to parse empty or invalid DIDL-Lite metadata")
+                if not prefix:
+                    self.audio_format = None
+                return
 
             # Strip namespaces for easier XPath
             for elem in didl_root.iter():
@@ -567,6 +593,8 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
 
             # Duration
             res_el = didl_root.find(".//res")
+            if not prefix:
+                self._set_audio_resource(res_el, "CurrentTrackMetaData")
             if res_el is not None and "duration" in res_el.attrib:
                 self.data[f"{prefix}media_duration"] = self._parse_duration(
                     res_el.attrib["duration"]
@@ -590,6 +618,46 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
 
         except etree.XMLSyntaxError as e:
             _LOGGER.warning("Failed to parse DIDL-Lite metadata (lxml): %s", e)
+            if not prefix:
+                self.audio_format = None
+
+    def _update_audio_track_uri(self, uri: str) -> None:
+        """Discard audio properties when the current track changes."""
+        if not uri or (
+            self._audio_track_uri is not None and uri != self._audio_track_uri
+        ):
+            self.audio_format = None
+        self._audio_track_uri = uri
+
+    def _set_audio_resource(self, resource: etree._Element | None, source: str) -> None:
+        """Log and extract the current track's DIDL resource."""
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            _LOGGER.debug(
+                "Current track DIDL res from %s: %s",
+                source,
+                etree.tostring(resource, encoding="unicode", with_tail=False)
+                if resource is not None
+                else "<no res element>",
+            )
+        self.audio_format = parse_audio_format(
+            resource.attrib if resource is not None else None
+        )
+
+    def _parse_audio_metadata(self, didl_xml: str) -> None:
+        """Update audio properties from GetPositionInfo track metadata."""
+        try:
+            root = etree.fromstring(
+                didl_xml.encode("utf-8"),
+                parser=etree.XMLParser(resolve_entities=False, no_network=True),
+            )
+        except etree.XMLSyntaxError as err:
+            _LOGGER.warning("Failed to parse track audio metadata: %s", err)
+            self.audio_format = None
+            return
+        resources = root.xpath(".//*[local-name()='res']")
+        self._set_audio_resource(
+            resources[0] if resources else None, "GetPositionInfo TrackMetaData"
+        )
 
     async def _async_update_data(self):
         """Fallback polling."""
@@ -609,6 +677,10 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
                     if isinstance(transport_data, str)
                     else "UNKNOWN"
                 )
+
+            if raw_state == "NO_MEDIA_PRESENT":
+                self.audio_format = None
+                self._audio_track_uri = None
 
             if isinstance(vol_data, dict) and "CurrentVolume" in vol_data:
                 _vol = int(vol_data.get("CurrentVolume", 0))

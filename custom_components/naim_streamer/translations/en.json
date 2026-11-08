@@ -26,6 +26,13 @@
             }
         }
     },
+    "entity": {
+        "sensor": {
+            "format": {
+                "name": "Audio format"
+            }
+        }
+    },
     "options": {
         "step": {
             "init": {

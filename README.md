@@ -28,9 +28,6 @@ This will display the configuration page
 
 In either case, you're presented with a configuration page.
 
-
-<img width="501" height="942" alt="image" src="https://github.com/user-attachments/assets/e714ce66-1320-41f7-8e5c-44ac8c25bdbe" />
-
 <img width="1166" height="1448" alt="image" src="https://github.com/user-attachments/assets/fdd373fe-e3aa-4ea1-965f-af04b806a7cd" />
 
 ## Remote Entity
@@ -41,6 +38,11 @@ The Naim streamers have no published API, and early devices such as the NDX have
 
 The NDX doesn't actually have any digital volume control. The volume buttons on the remote as designed to control the volume on a Naim pre-amp. This is actually the preferred designed to maintain maximum sound quality. So, the volume control buttons only affect the volume if you have a Naim pre-amp. They are only available if you have a remote entity defined.
 
-The streamer remote uses a combined Play/Pause button, rather than a separate
-Pause button.
+The streamer remote uses a combined Play/Pause button, rather than a separate Pause button.
 
+## Audio format sensor
+
+The audio format sensor uses the MIME type from the current track's DIDL-Lite
+resource. It is unknown when the source does not supply a MIME type. The format
+may describe a container rather than its codec; unrecognized MIME types are
+displayed as reported.
