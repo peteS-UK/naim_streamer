@@ -1,6 +1,6 @@
 import logging
 
-from homeassistant import config_entries, core
+from homeassistant import core
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.helpers import issue_registry as ir
@@ -15,10 +15,10 @@ from .coordinator import (
 _LOGGER = logging.getLogger(__name__)
 
 
-def _platforms_for_entry(config_entry: ConfigEntry) -> list[Platform]:
+def _platforms_for_emitter(infrared_entity_id: str | None) -> list[Platform]:
     """Return the platforms to load; buttons need an infrared emitter."""
     platforms = [Platform.MEDIA_PLAYER, Platform.SENSOR]
-    if config_entry.data.get(CONF_INFRARED_ENTITY_ID):
+    if infrared_entity_id:
         platforms.append(Platform.BUTTON)
     return platforms
 
@@ -28,9 +28,10 @@ def _update_legacy_remote_issue(
 ) -> None:
     """Raise a repair issue if the entry still uses a legacy Broadlink/Tuya remote."""
     issue_id = f"reselect_ir_emitter_{config_entry.entry_id}"
-    uses_legacy = bool(config_entry.data.get("remote_entity")) and not (
-        config_entry.data.get(CONF_INFRARED_ENTITY_ID)
+    emitter = config_entry.options.get(
+        CONF_INFRARED_ENTITY_ID, config_entry.data.get(CONF_INFRARED_ENTITY_ID)
     )
+    uses_legacy = bool(config_entry.data.get("remote_entity")) and not emitter
     if uses_legacy:
         ir.async_create_issue(
             hass,
@@ -65,19 +66,19 @@ async def async_setup_entry(
     await coordinator.async_config_entry_first_refresh()
 
     await hass.config_entries.async_forward_entry_setups(
-        config_entry, _platforms_for_entry(config_entry)
+        config_entry, _platforms_for_emitter(coordinator.infrared_entity_id)
     )
 
     return True
 
 
 async def async_unload_entry(
-    hass: core.HomeAssistant, entry: config_entries.ConfigEntry
+    hass: core.HomeAssistant, entry: StreamerConfigEntry
 ) -> bool:
     """Unload a config entry."""
 
     # The coordinator is cleaned up by the on_unload callback registered in setup,
     # which only runs once the platforms have unloaded successfully.
     return await hass.config_entries.async_unload_platforms(
-        entry, _platforms_for_entry(entry)
+        entry, _platforms_for_emitter(entry.runtime_data.coordinator.infrared_entity_id)
     )

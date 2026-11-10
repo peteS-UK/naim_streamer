@@ -99,7 +99,9 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         self._warned_no_notify = False
         self._notify_watch = None
         self.data = {}
-        self.infrared_entity_id = config_entry.data.get(CONF_INFRARED_ENTITY_ID)
+        self.infrared_entity_id = config_entry.options.get(
+            CONF_INFRARED_ENTITY_ID, config_entry.data.get(CONF_INFRARED_ENTITY_ID)
+        )
         self._ir_toggle_by_address: dict[int, int] = {}
         self._ir_send_lock = asyncio.Lock()
         self.media_position: int | None = None

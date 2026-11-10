@@ -7,6 +7,7 @@ from urllib.parse import urljoin, urlparse
 
 import probatio
 from homeassistant import config_entries
+from homeassistant.components.infrared import async_get_emitters
 from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
 from homeassistant.const import (
     ATTR_MANUFACTURER,
@@ -244,17 +245,34 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
 
-class NaimStreamerOptionsFlow(config_entries.OptionsFlow):
+class NaimStreamerOptionsFlow(config_entries.OptionsFlowWithReload):
     """Configure IR transmission options."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Set the number of frames sent for each device."""
+        """Select an emitter and set the number of frames sent for each device."""
+        entry = self.config_entry
+        current_emitter = entry.options.get(
+            CONF_INFRARED_ENTITY_ID, entry.data.get(CONF_INFRARED_ENTITY_ID)
+        )
+        emitters = async_get_emitters(self.hass)
+        if current_emitter and current_emitter not in emitters:
+            emitters.append(current_emitter)
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(
-                title="", data={**self.config_entry.options, **user_input}
-            )
+            emitter = user_input.get(CONF_INFRARED_ENTITY_ID)
+            if emitter and emitter not in emitters:
+                errors["base"] = "invalid_emitter"
+            else:
+                return self.async_create_entry(
+                    title="",
+                    data={
+                        **entry.options,
+                        **user_input,
+                        CONF_INFRARED_ENTITY_ID: emitter,
+                    },
+                )
 
         frame_selector = NumberSelector(
             NumberSelectorConfig(min=1, max=MAX_IR_FRAMES, mode=NumberSelectorMode.BOX)
@@ -266,6 +284,9 @@ class NaimStreamerOptionsFlow(config_entries.OptionsFlow):
         )
         schema = probatio.Schema(
             {
+                probatio.Optional(CONF_INFRARED_ENTITY_ID): EntitySelector(
+                    EntitySelectorConfig(domain="infrared", include_entities=emitters)
+                ),
                 probatio.Required(CONF_STREAMER_IR_FRAMES): frame_count,
                 probatio.Required(CONF_PREAMP_IR_FRAMES): frame_count,
             }
@@ -275,12 +296,19 @@ class NaimStreamerOptionsFlow(config_entries.OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 schema,
                 {
-                    CONF_STREAMER_IR_FRAMES: self.config_entry.options.get(
+                    CONF_INFRARED_ENTITY_ID: (
+                        user_input.get(CONF_INFRARED_ENTITY_ID)
+                        if user_input is not None
+                        else current_emitter
+                    ),
+                    CONF_STREAMER_IR_FRAMES: entry.options.get(
                         CONF_STREAMER_IR_FRAMES, DEFAULT_IR_FRAMES
                     ),
-                    CONF_PREAMP_IR_FRAMES: self.config_entry.options.get(
+                    CONF_PREAMP_IR_FRAMES: entry.options.get(
                         CONF_PREAMP_IR_FRAMES, DEFAULT_IR_FRAMES
                     ),
+                    **(user_input or {}),
                 },
             ),
+            errors=errors,
         )
