@@ -24,7 +24,7 @@
         {
             "st": "urn:schemas-upnp-org:device:MediaRenderer:1",
             "manufacturer": "Naim Audio Ltd.",
-            "modelName": "NDX2"
+            "modelName": "ND5 XS"
         },
         {
             "st": "urn:schemas-upnp-org:device:MediaRenderer:1",
@@ -34,7 +34,12 @@
         {
             "st": "urn:schemas-upnp-org:device:MediaRenderer:1",
             "manufacturer": "Naim Audio Ltd.",
-            "modelName": "NDS2"
+            "modelName": "NAC-N 272"
+        },
+        {
+            "st": "urn:schemas-upnp-org:device:MediaRenderer:1",
+            "manufacturer": "Naim Audio Ltd.",
+            "modelName": "NAC-N 172 XS"
         }
     ],
     "version": "v2.0.1"
