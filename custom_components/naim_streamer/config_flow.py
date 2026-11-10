@@ -7,7 +7,7 @@ from urllib.parse import urljoin, urlparse
 
 import probatio
 from homeassistant import config_entries
-from homeassistant.config_entries import ConfigFlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
 from homeassistant.const import (
     ATTR_MANUFACTURER,
     CONF_HOST,
@@ -20,6 +20,9 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     EntitySelector,
     EntitySelectorConfig,
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
 )
 from homeassistant.helpers.service_info.ssdp import SsdpServiceInfo
 
@@ -27,8 +30,12 @@ from .const import (
     CONF_AV_TRANSPORT_URL,
     CONF_CONNECTION_MANAGER_URL,
     CONF_INFRARED_ENTITY_ID,
+    CONF_PREAMP_IR_FRAMES,
     CONF_RENDERING_CONTROL_URL,
+    CONF_STREAMER_IR_FRAMES,
+    DEFAULT_IR_FRAMES,
     DOMAIN,
+    MAX_IR_FRAMES,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,6 +57,18 @@ CONFIG_SCHEMA = probatio.Schema(
 )
 
 
+def _default_service_urls(host: str, port: str | int) -> dict[str, str]:
+    """Build the default UPnP service URLs for a streamer."""
+    base = f"http://{host}:{port}"
+    return {
+        CONF_RENDERING_CONTROL_URL: f"{base}/RenderingControl/ctrl",
+        CONF_AV_TRANSPORT_URL: f"{base}/AVTransport/ctrl",
+        CONF_CONNECTION_MANAGER_URL: f"{base}/ConnectionManager/ctrl",
+        "rendering_control_event_url": f"{base}/RenderingControl/evt",
+        "av_transport_event_url": f"{base}/AVTransport/evt",
+    }
+
+
 class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Naim NDX."""
 
@@ -61,30 +80,20 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    @staticmethod
+    def async_get_options_flow(config_entry: ConfigEntry) -> config_entries.OptionsFlow:
+        """Return the options flow for this entry."""
+        return NaimStreamerOptionsFlow()
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manual setup."""
         if user_input is not None:
-            extras = {}
-            extras[CONF_RENDERING_CONTROL_URL] = (
-                f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}/RenderingControl/ctrl"
-            )
-            extras[CONF_AV_TRANSPORT_URL] = (
-                f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}/AVTransport/ctrl"
-            )
-            extras[CONF_CONNECTION_MANAGER_URL] = (
-                f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}/ConnectionManager/ctrl"
-            )
+            extras = _default_service_urls(user_input[CONF_HOST], user_input[CONF_PORT])
             extras["udn"] = (
                 "naim_streamer_"
                 + user_input[CONF_NAME].replace(" ", "_").replace("-", "_").lower()
-            )
-            extras["rendering_control_event_url"] = (
-                f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}//RenderingControl/evt"
-            )
-            extras["av_transport_event_url"] = (
-                f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}//AVTransport/evt"
             )
             return self.async_create_entry(
                 title=user_input[CONF_HOST], data=user_input | extras
@@ -202,16 +211,15 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_confirm(self, user_input=None):
         """Ask user to confirm adding the device."""
         if user_input is not None:
-            extras = {
-                CONF_RENDERING_CONTROL_URL: self.data[CONF_RENDERING_CONTROL_URL],
-                CONF_AV_TRANSPORT_URL: self.data[CONF_AV_TRANSPORT_URL],
-                CONF_CONNECTION_MANAGER_URL: self.data[CONF_CONNECTION_MANAGER_URL],
-                "udn": self.data["udn"],
-                "rendering_control_event_url": self.data.get(
-                    "rendering_control_event_url"
-                ),
-                "av_transport_event_url": self.data.get("av_transport_event_url"),
-            }
+            extras = _default_service_urls(user_input[CONF_HOST], user_input[CONF_PORT])
+            if (
+                user_input[CONF_HOST] == self.data[CONF_HOST]
+                and str(user_input[CONF_PORT]) == str(self.data[CONF_PORT])
+            ):
+                for key in extras:
+                    if self.data.get(key):
+                        extras[key] = self.data[key]
+            extras["udn"] = self.data["udn"]
 
             return self.async_create_entry(
                 title=self.context.get("title_placeholders", {}).get(
@@ -233,4 +241,46 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 },
             ),
             description_placeholders=self.context.get("title_placeholders"),
+        )
+
+
+class NaimStreamerOptionsFlow(config_entries.OptionsFlow):
+    """Configure IR transmission options."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Set the number of frames sent for each device."""
+        if user_input is not None:
+            return self.async_create_entry(
+                title="", data={**self.config_entry.options, **user_input}
+            )
+
+        frame_selector = NumberSelector(
+            NumberSelectorConfig(min=1, max=MAX_IR_FRAMES, mode=NumberSelectorMode.BOX)
+        )
+        frame_count = probatio.All(
+            frame_selector,
+            probatio.In(range(1, MAX_IR_FRAMES + 1)),
+            probatio.Coerce(int),
+        )
+        schema = probatio.Schema(
+            {
+                probatio.Required(CONF_STREAMER_IR_FRAMES): frame_count,
+                probatio.Required(CONF_PREAMP_IR_FRAMES): frame_count,
+            }
+        )
+        return self.async_show_form(
+            step_id="init",
+            data_schema=self.add_suggested_values_to_schema(
+                schema,
+                {
+                    CONF_STREAMER_IR_FRAMES: self.config_entry.options.get(
+                        CONF_STREAMER_IR_FRAMES, DEFAULT_IR_FRAMES
+                    ),
+                    CONF_PREAMP_IR_FRAMES: self.config_entry.options.get(
+                        CONF_PREAMP_IR_FRAMES, DEFAULT_IR_FRAMES
+                    ),
+                },
+            ),
         )

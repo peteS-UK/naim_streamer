@@ -13,7 +13,7 @@ def _streamer(command: int) -> RC5Command:
 
 
 def _preamp(command: int) -> RC5Command:
-    return RC5Command(address=PREAMP_ADDRESS, command=command, repeat_count=1)
+    return RC5Command(address=PREAMP_ADDRESS, command=command)
 
 
 class NaimIRCodes:

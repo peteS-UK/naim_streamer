@@ -9,6 +9,8 @@ A simple media player to control Naim NDX Streamers from Home Assistant.
 
 The original NDX only provides a basic UpNP interface with play, pause, stop etc. support. Although the metadata is shown for all sources, the commands only work with the UPnP input. However, if you select a remote emitter during setup, all of the buttons from the remote are implemented and work across all inputs.
 
+This integration is for the original NDX.  It may also work with other first generation streamers, such as ND5, NDS etc. but this is untested.  It won't work with later streamers such as NDX2, NDS2 etc. which provide a much richer API and for which other integrations are available.
+
 ## Installation
 
 The preferred installation approach is via Home Assistant Community Store - aka [HACS](https://hacs.xyz/). The [repo](https://github.com/peteS-UK/naim_streamer) is installable as a [Custom Repo](https://hacs.xyz/docs/faq/custom_repositories) via HACS.
@@ -22,7 +24,7 @@ Once downloaded either via HACS or manually, restart your Home Assistant server.
 The integration should discover your steamer automatically and list it in the Discovered list in the integration page. If it's not discovered automatically, for example if your network has multiple subnets, then you can manually add the integration.Go into your Integrations (under Settings, Devices & Services), select Add Integration, and choose the NAIM Streamer integration, or click the shortcut button below (requires My Homeassistant configured).
 
 [![Add Integration to your Home Assistant
-instance.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=naim_cdx)
+instance.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=naim_streamer)
 
 This will display the configuration page
 
@@ -30,7 +32,13 @@ In either case, you're presented with a configuration page.
 
 <img width="1166" height="1448" alt="image" src="https://github.com/user-attachments/assets/fdd373fe-e3aa-4ea1-965f-af04b806a7cd" />
 
-## Remote Entity
+## Options
+
+Once the integration has been configured, the Naim Streamer device provides a configuration option which allows you to specifiy the number of frames to be sent to both the streamer and the pre-amp.  The default values will normally suffice, but increasing the number of repeated frames can improve reliability.
+
+<img width="727" height="530" alt="image" src="https://github.com/user-attachments/assets/2017815b-e635-436c-b7e3-edc33f4bf03b" />
+
+## Infrared Entity
 
 The Naim streamers have no published API, and early devices such as the NDX have no API to properly control the device, other than a SOAP interface required for UPnP control. As such, this integration is in two parts. Firstly, it implements the UPnP interface for playback controls and to receive metadata and status information from the streamer. Secondly, if you have a remote ir blaster device which is supported by the [Home Assistant Infrared Integration](https://www.home-assistant.io/integrations/infrared/) as an emitter, and you select it in the Configuration page, it implements all of the buttons from the remote control as buttons in Home Assistant.  The Infrared integration acts as an abstraction layer between this integration and other integrations which actually provide infrared entities, such as [Broadlink](https://www.home-assistant.io/integrations/broadlink/) or [Tuya Local](https://github.com/make-all/tuya-local).
 
@@ -38,6 +46,8 @@ The Naim streamers have no published API, and early devices such as the NDX have
 
 The NDX doesn't actually have any digital volume control. The volume buttons on the remote as designed to control the volume on a Naim pre-amp. This is actually the preferred designed to maintain maximum sound quality. So, the volume control buttons only affect the volume if you have a Naim pre-amp. They are only available if you have a remote entity defined.
 
-The streamer remote uses a combined Play/Pause button, rather than a separate
-Pause button.
+The streamer remote uses a combined Play/Pause button, rather than a separate Pause button.
 
+## Audio format sensor
+
+The audio format sensor uses the MIME type from the current track's metadata. It is unknown when the source does not supply a MIME type. The format may describe a container rather than its codec; unrecognized MIME types are displayed as reported.

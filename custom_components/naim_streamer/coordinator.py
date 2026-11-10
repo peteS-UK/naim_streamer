@@ -2,6 +2,7 @@
 
 import asyncio
 import html
+import ipaddress
 import logging
 import re
 import socket
@@ -25,8 +26,15 @@ from homeassistant.util import dt as dt_util
 from infrared_protocols.commands.rc5 import RC5Command
 from lxml import etree
 
-from .const import CONF_INFRARED_ENTITY_ID, DOMAIN
-from .ir_codes import COMMANDS
+from .audio_metadata import parse_audio_format
+from .const import (
+    CONF_INFRARED_ENTITY_ID,
+    CONF_PREAMP_IR_FRAMES,
+    CONF_STREAMER_IR_FRAMES,
+    DEFAULT_IR_FRAMES,
+    DOMAIN,
+)
+from .ir_codes import COMMANDS, PREAMP_ADDRESS, STREAMER_ADDRESS
 from .naim_streamer_client import NaimStreamerClient
 
 TRANSPORT_TO_HA_STATE = {
@@ -47,6 +55,7 @@ type StreamerConfigEntry = ConfigEntry[StreamerData]
 
 DEFAULT_TIMEOUT = 10
 NOTIFY_WAIT_SECONDS = 30
+NOTIFY_SID_WAIT_SECONDS = 2
 POSITION_REFRESH_SECONDS = 30
 _LOGGER = logging.getLogger(__name__)
 
@@ -82,6 +91,7 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         )
         self.sid_av = None
         self.sid_rc = None
+        self._subscription_pending: asyncio.Event | None = None
         self._runner = None
         self._site = None
         self._callback_url = ""
@@ -96,6 +106,8 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         self.media_position_updated_at: datetime | None = None
         self._position_refresh_requested = asyncio.Event()
         self._position_generation = 0
+        self.audio_format: str | None = None
+        self._audio_track_uri: str | None = None
         self.uuid = self.config_entry.data["udn"]
 
     async def _async_setup(self):
@@ -135,11 +147,13 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         )
 
         try:
-            self.sid_av = await self.streamer.subscribe_service(
-                self.config_entry.data["av_transport_event_url"], callback_url
+            await self._subscribe_service(
+                "sid_av", self.config_entry.data["av_transport_event_url"], callback_url
             )
-            self.sid_rc = await self.streamer.subscribe_service(
-                self.config_entry.data["rendering_control_event_url"], callback_url
+            await self._subscribe_service(
+                "sid_rc",
+                self.config_entry.data["rendering_control_event_url"],
+                callback_url,
             )
             if self.sid_av and self.sid_rc:
                 self._after_subscribe()
@@ -191,8 +205,28 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
                 command=template.command,
                 toggle=toggle,
                 modulation=template.modulation,
-                repeat_count=template.repeat_count,
+                repeat_count=self.config_entry.options.get(
+                    {
+                        STREAMER_ADDRESS: CONF_STREAMER_IR_FRAMES,
+                        PREAMP_ADDRESS: CONF_PREAMP_IR_FRAMES,
+                    }[template.address],
+                    DEFAULT_IR_FRAMES,
+                )
+                - 1,
             )
+            if _LOGGER.isEnabledFor(logging.DEBUG):
+                _LOGGER.debug(
+                    "Sending RC5 command %s to %s: address=%d command=%d toggle=%d "
+                    "frames=%d carrier=%d Hz timings_us=%s",
+                    command,
+                    self.infrared_entity_id,
+                    rc5_command.address,
+                    rc5_command.command,
+                    rc5_command.toggle,
+                    rc5_command.repeat_count + 1,
+                    rc5_command.modulation,
+                    rc5_command.get_raw_timings(),
+                )
             await async_send_command(self.hass, self.infrared_entity_id, rc5_command)
 
     async def async_play(self):
@@ -264,8 +298,7 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
             self.update_interval = timedelta(seconds=30)
 
     def _after_subscribe(self) -> None:
-        """Reset event tracking after a (re)subscribe and watch for the first NOTIFY."""
-        self._notify_received = False
+        """Watch for the first NOTIFY after a (re)subscribe."""
         self._apply_poll_mode()
         if self._notify_watch:
             self._notify_watch()
@@ -294,6 +327,18 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         lifetime = self.streamer.subscription_timeout or requested
         return max(15, min(requested - 60, lifetime / 2))
 
+    async def _subscribe_service(
+        self, sid_attribute: str, event_url: str, callback_url: str, timeout: int = 300
+    ) -> None:
+        """Record a subscription SID before releasing early notifications."""
+        pending = self._subscription_pending = asyncio.Event()
+        try:
+            sid = await self.streamer.subscribe_service(event_url, callback_url, timeout)
+            setattr(self, sid_attribute, sid)
+        finally:
+            self._subscription_pending = None
+            pending.set()
+
     async def _renew_loop(self, callback_url: str):
         timeout = 300
         try:
@@ -317,12 +362,17 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
                     _LOGGER.warning("Renewal failed, re-subscribing:", exc_info=True)
                     # Try full re‑subscribe
                     try:
-                        self.sid_av = await self.streamer.subscribe_service(
+                        self.sid_av = None
+                        self.sid_rc = None
+                        self._notify_received = False
+                        await self._subscribe_service(
+                            "sid_av",
                             self.config_entry.data["av_transport_event_url"],
                             callback_url,
                             timeout,
                         )
-                        self.sid_rc = await self.streamer.subscribe_service(
+                        await self._subscribe_service(
+                            "sid_rc",
                             self.config_entry.data["rendering_control_event_url"],
                             callback_url,
                             timeout,
@@ -335,14 +385,44 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Renewal loop cancelled")
             raise
 
+    async def _notify_from_streamer(self, remote: str | None) -> bool:
+        """Check the socket peer against the configured streamer address."""
+        host = self.streamer.host
+        if not remote or not host:
+            return False
+        try:
+            peer = ipaddress.ip_address(remote)
+        except ValueError:
+            return False
+        try:
+            return peer == ipaddress.ip_address(host)
+        except ValueError:
+            try:
+                addresses = await asyncio.get_running_loop().getaddrinfo(
+                    host, None, type=socket.SOCK_STREAM
+                )
+            except OSError as err:
+                _LOGGER.warning("Unable to resolve streamer host %s: %s", host, err)
+                return False
+            return any(peer == ipaddress.ip_address(address[4][0]) for address in addresses)
+
     async def _handle_notify(self, request):
+        if not await self._notify_from_streamer(request.remote):
+            _LOGGER.debug("Rejecting NOTIFY from unexpected peer %s", request.remote)
+            return web.Response(status=403)
+        sid = request.headers.get("SID")
+        pending = self._subscription_pending
+        if sid and sid not in (self.sid_av, self.sid_rc) and pending is not None:
+            try:
+                await asyncio.wait_for(pending.wait(), NOTIFY_SID_WAIT_SECONDS)
+            except TimeoutError:
+                _LOGGER.debug("Timed out waiting for a subscription SID")
+        if not sid or sid not in (self.sid_av, self.sid_rc):
+            _LOGGER.debug("Rejecting NOTIFY with unknown SID from %s", request.remote)
+            return web.Response(status=403)
+
         body = await request.text()
         _LOGGER.debug("Received from %s NOTIFY:\n%s", request.remote, body)
-
-        if not self._notify_received:
-            self._notify_received = True
-            self._warned_no_notify = False
-            self._apply_poll_mode()
 
         ns = {"e": "urn:schemas-upnp-org:event-1-0"}
 
@@ -353,6 +433,11 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
                 "Ignoring malformed NOTIFY XML from %s: %s", request.remote, err
             )
             return web.Response(status=200)
+
+        if not self._notify_received:
+            self._notify_received = True
+            self._warned_no_notify = False
+            self._apply_poll_mode()
 
         # Detect service type from payload
         if "urn:schemas-upnp-org:metadata-1-0/AVT/" in body:
@@ -378,10 +463,18 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
                 for child in prop:
                     tag = child.tag
                     val = child.text or ""
-                    if tag == "CurrentVolume" and val.strip():
-                        self.data["volume"] = int(val)
-                    elif tag == "Mute" and val.strip():
-                        self.data["mute"] = bool(int(val))
+                    if tag in ("CurrentVolume", "Mute") and val.strip():
+                        try:
+                            value = int(val)
+                        except ValueError:
+                            _LOGGER.warning(
+                                "Ignoring invalid %s value in NOTIFY: %r", tag, val
+                            )
+                            continue
+                        if tag == "CurrentVolume":
+                            self.data["volume"] = value
+                        else:
+                            self.data["mute"] = bool(value)
 
         _LOGGER.debug("Coordinator data after NOTIFY: %s", self.data)
         self.async_update_listeners()
@@ -428,6 +521,14 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
                 position_info = None
             if generation != self._position_generation:
                 continue
+            if isinstance(position_info, dict):
+                if "TrackURI" in position_info:
+                    self._update_audio_track_uri(position_info["TrackURI"])
+                track_metadata = position_info.get("TrackMetaData")
+                if isinstance(track_metadata, str) and track_metadata.strip().startswith(
+                    "<"
+                ):
+                    self._parse_audio_metadata(track_metadata)
             raw_position = (
                 position_info.get("RelTime") if isinstance(position_info, dict) else None
             )
@@ -468,12 +569,19 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.warning("Failed to parse RenderingControl XML (lxml): %s", e)
 
     def _parse_last_change(self, val: str):
+        track_uri = re.search(r'CurrentTrackURI\s+val="([^"]*)"', val)
+        if track_uri:
+            self._update_audio_track_uri(html.unescape(track_uri.group(1)))
+
         # Get raw CurrentTrackMetaData DIDL from the unparsed LastChange string
-        m = re.search(r'CurrentTrackMetaData\s+val="([^"]+)"', val)
+        m = re.search(r'CurrentTrackMetaData\s+val="([^"]*)"', val)
         if m:
             raw_val = m.group(1)
             didl_xml = html.unescape(html.unescape(raw_val))
-            self._parse_didl_metadata(didl_xml)
+            if didl_xml.strip() and didl_xml.strip() != "NOT_IMPLEMENTED":
+                self._parse_didl_metadata(didl_xml)
+            else:
+                self.audio_format = None
 
         # Get raw NextAVTransportURIMetaData DIDL
         m = re.search(r'NextAVTransportURIMetaData\s+val="([^"]+)"', val)
@@ -494,6 +602,9 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
 
         ts_elems = inst.xpath(".//*[local-name()='TransportState']")
         if ts_elems:
+            if ts_elems[0].attrib.get("val", "").upper() == "NO_MEDIA_PRESENT":
+                self.audio_format = None
+                self._audio_track_uri = None
             self.data["state"] = TRANSPORT_TO_HA_STATE.get(
                 ts_elems[0].attrib.get("val", "").upper(), MediaPlayerState.IDLE
             )
@@ -517,6 +628,11 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
 
             parser = etree.XMLParser(recover=True)
             didl_root = etree.fromstring(didl_xml.encode("utf-8"), parser=parser)
+            if didl_root is None:
+                _LOGGER.warning("Failed to parse empty or invalid DIDL-Lite metadata")
+                if not prefix:
+                    self.audio_format = None
+                return
 
             # Strip namespaces for easier XPath
             for elem in didl_root.iter():
@@ -541,6 +657,8 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
 
             # Duration
             res_el = didl_root.find(".//res")
+            if not prefix:
+                self._set_audio_resource(res_el, "CurrentTrackMetaData")
             if res_el is not None and "duration" in res_el.attrib:
                 self.data[f"{prefix}media_duration"] = self._parse_duration(
                     res_el.attrib["duration"]
@@ -564,6 +682,46 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
 
         except etree.XMLSyntaxError as e:
             _LOGGER.warning("Failed to parse DIDL-Lite metadata (lxml): %s", e)
+            if not prefix:
+                self.audio_format = None
+
+    def _update_audio_track_uri(self, uri: str) -> None:
+        """Discard audio properties when the current track changes."""
+        if not uri or (
+            self._audio_track_uri is not None and uri != self._audio_track_uri
+        ):
+            self.audio_format = None
+        self._audio_track_uri = uri
+
+    def _set_audio_resource(self, resource: etree._Element | None, source: str) -> None:
+        """Log and extract the current track's DIDL resource."""
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            _LOGGER.debug(
+                "Current track DIDL res from %s: %s",
+                source,
+                etree.tostring(resource, encoding="unicode", with_tail=False)
+                if resource is not None
+                else "<no res element>",
+            )
+        self.audio_format = parse_audio_format(
+            resource.attrib if resource is not None else None
+        )
+
+    def _parse_audio_metadata(self, didl_xml: str) -> None:
+        """Update audio properties from GetPositionInfo track metadata."""
+        try:
+            root = etree.fromstring(
+                didl_xml.encode("utf-8"),
+                parser=etree.XMLParser(resolve_entities=False, no_network=True),
+            )
+        except etree.XMLSyntaxError as err:
+            _LOGGER.warning("Failed to parse track audio metadata: %s", err)
+            self.audio_format = None
+            return
+        resources = root.xpath(".//*[local-name()='res']")
+        self._set_audio_resource(
+            resources[0] if resources else None, "GetPositionInfo TrackMetaData"
+        )
 
     async def _async_update_data(self):
         """Fallback polling."""
@@ -583,6 +741,10 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
                     if isinstance(transport_data, str)
                     else "UNKNOWN"
                 )
+
+            if raw_state == "NO_MEDIA_PRESENT":
+                self.audio_format = None
+                self._audio_track_uri = None
 
             if isinstance(vol_data, dict) and "CurrentVolume" in vol_data:
                 _vol = int(vol_data.get("CurrentVolume", 0))
