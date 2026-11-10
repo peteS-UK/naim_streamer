@@ -30,9 +30,6 @@ This will display the configuration page
 
 In either case, you're presented with a configuration page.
 
-If discovery cannot retrieve all UPnP service URLs, the integration uses the
-standard NDX service paths at the host and port confirmed during setup.
-
 <img width="1166" height="1448" alt="image" src="https://github.com/user-attachments/assets/fdd373fe-e3aa-4ea1-965f-af04b806a7cd" />
 
 ## Options
