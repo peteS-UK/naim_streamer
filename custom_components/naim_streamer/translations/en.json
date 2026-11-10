@@ -34,11 +34,15 @@
         }
     },
     "options": {
+        "error": {
+            "invalid_emitter": "Select an available infrared emitter."
+        },
         "step": {
             "init": {
                 "title": "Infrared settings",
-                "description": "Set the total number of RC5 frames sent per press, including the initial frame.",
+                "description": "Select an infrared emitter and set the total number of RC5 frames sent per press, including the initial frame.",
                 "data": {
+                    "infrared_entity_id": "Infrared emitter (optional)",
                     "streamer_ir_frames": "Streamer frames",
                     "preamp_ir_frames": "Preamp frames"
                 }
