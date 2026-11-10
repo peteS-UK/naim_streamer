@@ -145,11 +145,14 @@ class NaimStreamerDevice(StreamerEntity, MediaPlayerEntity):
         await self.coordinator.async_play()
 
     async def async_media_play_pause(self):
-        await self.coordinator.async_play()
+        if self.state == MediaPlayerState.PLAYING:
+            await self.coordinator.async_pause()
+        else:
+            await self.coordinator.async_play()
 
     async def async_media_pause(self):
-        """Pause and confirm."""
-        await self.coordinator.async_play()
+        """Pause playback."""
+        await self.coordinator.async_pause()
 
     async def async_media_stop(self):
         """Stop and confirm."""

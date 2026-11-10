@@ -57,6 +57,18 @@ CONFIG_SCHEMA = probatio.Schema(
 )
 
 
+def _default_service_urls(host: str, port: str | int) -> dict[str, str]:
+    """Build the default UPnP service URLs for a streamer."""
+    base = f"http://{host}:{port}"
+    return {
+        CONF_RENDERING_CONTROL_URL: f"{base}/RenderingControl/ctrl",
+        CONF_AV_TRANSPORT_URL: f"{base}/AVTransport/ctrl",
+        CONF_CONNECTION_MANAGER_URL: f"{base}/ConnectionManager/ctrl",
+        "rendering_control_event_url": f"{base}/RenderingControl/evt",
+        "av_transport_event_url": f"{base}/AVTransport/evt",
+    }
+
+
 class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Naim NDX."""
 
@@ -78,25 +90,10 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Manual setup."""
         if user_input is not None:
-            extras = {}
-            extras[CONF_RENDERING_CONTROL_URL] = (
-                f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}/RenderingControl/ctrl"
-            )
-            extras[CONF_AV_TRANSPORT_URL] = (
-                f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}/AVTransport/ctrl"
-            )
-            extras[CONF_CONNECTION_MANAGER_URL] = (
-                f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}/ConnectionManager/ctrl"
-            )
+            extras = _default_service_urls(user_input[CONF_HOST], user_input[CONF_PORT])
             extras["udn"] = (
                 "naim_streamer_"
                 + user_input[CONF_NAME].replace(" ", "_").replace("-", "_").lower()
-            )
-            extras["rendering_control_event_url"] = (
-                f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}//RenderingControl/evt"
-            )
-            extras["av_transport_event_url"] = (
-                f"http://{user_input[CONF_HOST]}:{user_input[CONF_PORT]}//AVTransport/evt"
             )
             return self.async_create_entry(
                 title=user_input[CONF_HOST], data=user_input | extras
@@ -214,16 +211,15 @@ class NaimStreamerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_confirm(self, user_input=None):
         """Ask user to confirm adding the device."""
         if user_input is not None:
-            extras = {
-                CONF_RENDERING_CONTROL_URL: self.data[CONF_RENDERING_CONTROL_URL],
-                CONF_AV_TRANSPORT_URL: self.data[CONF_AV_TRANSPORT_URL],
-                CONF_CONNECTION_MANAGER_URL: self.data[CONF_CONNECTION_MANAGER_URL],
-                "udn": self.data["udn"],
-                "rendering_control_event_url": self.data.get(
-                    "rendering_control_event_url"
-                ),
-                "av_transport_event_url": self.data.get("av_transport_event_url"),
-            }
+            extras = _default_service_urls(user_input[CONF_HOST], user_input[CONF_PORT])
+            if (
+                user_input[CONF_HOST] == self.data[CONF_HOST]
+                and str(user_input[CONF_PORT]) == str(self.data[CONF_PORT])
+            ):
+                for key in extras:
+                    if self.data.get(key):
+                        extras[key] = self.data[key]
+            extras["udn"] = self.data["udn"]
 
             return self.async_create_entry(
                 title=self.context.get("title_placeholders", {}).get(

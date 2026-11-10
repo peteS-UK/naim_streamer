@@ -2,6 +2,7 @@
 
 import asyncio
 import html
+import ipaddress
 import logging
 import re
 import socket
@@ -54,6 +55,7 @@ type StreamerConfigEntry = ConfigEntry[StreamerData]
 
 DEFAULT_TIMEOUT = 10
 NOTIFY_WAIT_SECONDS = 30
+NOTIFY_SID_WAIT_SECONDS = 2
 POSITION_REFRESH_SECONDS = 30
 _LOGGER = logging.getLogger(__name__)
 
@@ -89,6 +91,7 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         )
         self.sid_av = None
         self.sid_rc = None
+        self._subscription_pending: asyncio.Event | None = None
         self._runner = None
         self._site = None
         self._callback_url = ""
@@ -144,11 +147,13 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         )
 
         try:
-            self.sid_av = await self.streamer.subscribe_service(
-                self.config_entry.data["av_transport_event_url"], callback_url
+            await self._subscribe_service(
+                "sid_av", self.config_entry.data["av_transport_event_url"], callback_url
             )
-            self.sid_rc = await self.streamer.subscribe_service(
-                self.config_entry.data["rendering_control_event_url"], callback_url
+            await self._subscribe_service(
+                "sid_rc",
+                self.config_entry.data["rendering_control_event_url"],
+                callback_url,
             )
             if self.sid_av and self.sid_rc:
                 self._after_subscribe()
@@ -293,8 +298,7 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
             self.update_interval = timedelta(seconds=30)
 
     def _after_subscribe(self) -> None:
-        """Reset event tracking after a (re)subscribe and watch for the first NOTIFY."""
-        self._notify_received = False
+        """Watch for the first NOTIFY after a (re)subscribe."""
         self._apply_poll_mode()
         if self._notify_watch:
             self._notify_watch()
@@ -323,6 +327,18 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
         lifetime = self.streamer.subscription_timeout or requested
         return max(15, min(requested - 60, lifetime / 2))
 
+    async def _subscribe_service(
+        self, sid_attribute: str, event_url: str, callback_url: str, timeout: int = 300
+    ) -> None:
+        """Record a subscription SID before releasing early notifications."""
+        pending = self._subscription_pending = asyncio.Event()
+        try:
+            sid = await self.streamer.subscribe_service(event_url, callback_url, timeout)
+            setattr(self, sid_attribute, sid)
+        finally:
+            self._subscription_pending = None
+            pending.set()
+
     async def _renew_loop(self, callback_url: str):
         timeout = 300
         try:
@@ -346,12 +362,17 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
                     _LOGGER.warning("Renewal failed, re-subscribing:", exc_info=True)
                     # Try full re‑subscribe
                     try:
-                        self.sid_av = await self.streamer.subscribe_service(
+                        self.sid_av = None
+                        self.sid_rc = None
+                        self._notify_received = False
+                        await self._subscribe_service(
+                            "sid_av",
                             self.config_entry.data["av_transport_event_url"],
                             callback_url,
                             timeout,
                         )
-                        self.sid_rc = await self.streamer.subscribe_service(
+                        await self._subscribe_service(
+                            "sid_rc",
                             self.config_entry.data["rendering_control_event_url"],
                             callback_url,
                             timeout,
@@ -364,14 +385,44 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Renewal loop cancelled")
             raise
 
+    async def _notify_from_streamer(self, remote: str | None) -> bool:
+        """Check the socket peer against the configured streamer address."""
+        host = self.streamer.host
+        if not remote or not host:
+            return False
+        try:
+            peer = ipaddress.ip_address(remote)
+        except ValueError:
+            return False
+        try:
+            return peer == ipaddress.ip_address(host)
+        except ValueError:
+            try:
+                addresses = await asyncio.get_running_loop().getaddrinfo(
+                    host, None, type=socket.SOCK_STREAM
+                )
+            except OSError as err:
+                _LOGGER.warning("Unable to resolve streamer host %s: %s", host, err)
+                return False
+            return any(peer == ipaddress.ip_address(address[4][0]) for address in addresses)
+
     async def _handle_notify(self, request):
+        if not await self._notify_from_streamer(request.remote):
+            _LOGGER.debug("Rejecting NOTIFY from unexpected peer %s", request.remote)
+            return web.Response(status=403)
+        sid = request.headers.get("SID")
+        pending = self._subscription_pending
+        if sid and sid not in (self.sid_av, self.sid_rc) and pending is not None:
+            try:
+                await asyncio.wait_for(pending.wait(), NOTIFY_SID_WAIT_SECONDS)
+            except TimeoutError:
+                _LOGGER.debug("Timed out waiting for a subscription SID")
+        if not sid or sid not in (self.sid_av, self.sid_rc):
+            _LOGGER.debug("Rejecting NOTIFY with unknown SID from %s", request.remote)
+            return web.Response(status=403)
+
         body = await request.text()
         _LOGGER.debug("Received from %s NOTIFY:\n%s", request.remote, body)
-
-        if not self._notify_received:
-            self._notify_received = True
-            self._warned_no_notify = False
-            self._apply_poll_mode()
 
         ns = {"e": "urn:schemas-upnp-org:event-1-0"}
 
@@ -382,6 +433,11 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
                 "Ignoring malformed NOTIFY XML from %s: %s", request.remote, err
             )
             return web.Response(status=200)
+
+        if not self._notify_received:
+            self._notify_received = True
+            self._warned_no_notify = False
+            self._apply_poll_mode()
 
         # Detect service type from payload
         if "urn:schemas-upnp-org:metadata-1-0/AVT/" in body:
@@ -407,10 +463,18 @@ class StreamerDataUpdateCoordinator(DataUpdateCoordinator):
                 for child in prop:
                     tag = child.tag
                     val = child.text or ""
-                    if tag == "CurrentVolume" and val.strip():
-                        self.data["volume"] = int(val)
-                    elif tag == "Mute" and val.strip():
-                        self.data["mute"] = bool(int(val))
+                    if tag in ("CurrentVolume", "Mute") and val.strip():
+                        try:
+                            value = int(val)
+                        except ValueError:
+                            _LOGGER.warning(
+                                "Ignoring invalid %s value in NOTIFY: %r", tag, val
+                            )
+                            continue
+                        if tag == "CurrentVolume":
+                            self.data["volume"] = value
+                        else:
+                            self.data["mute"] = bool(value)
 
         _LOGGER.debug("Coordinator data after NOTIFY: %s", self.data)
         self.async_update_listeners()
