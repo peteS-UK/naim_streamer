@@ -39,6 +39,8 @@ standard NDX service paths at the host and port confirmed during setup.
 
 Once the integration has been configured, the Naim Streamer device provides a configuration option which allows you to specifiy the number of frames to be sent to both the streamer and the pre-amp.  The default values will normally suffice, but increasing the number of repeated frames can improve reliability.
 
+<img width="727" height="530" alt="image" src="https://github.com/user-attachments/assets/2017815b-e635-436c-b7e3-edc33f4bf03b" />
+
 ## Infrared Entity
 
 The Naim streamers have no published API, and early devices such as the NDX have no API to properly control the device, other than a SOAP interface required for UPnP control. As such, this integration is in two parts. Firstly, it implements the UPnP interface for playback controls and to receive metadata and status information from the streamer. Secondly, if you have a remote ir blaster device which is supported by the [Home Assistant Infrared Integration](https://www.home-assistant.io/integrations/infrared/) as an emitter, and you select it in the Configuration page, it implements all of the buttons from the remote control as buttons in Home Assistant.  The Infrared integration acts as an abstraction layer between this integration and other integrations which actually provide infrared entities, such as [Broadlink](https://www.home-assistant.io/integrations/broadlink/) or [Tuya Local](https://github.com/make-all/tuya-local).
