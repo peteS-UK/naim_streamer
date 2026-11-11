@@ -27,6 +27,8 @@ from infrared_protocols.commands.rc5 import RC5Command
 from lxml import etree
 
 from .audio_metadata import parse_audio_format
+from .codes.naim.gen1_preamp import PREAMP_ADDRESS
+from .codes.naim.gen1_streamer import STREAMER_ADDRESS
 from .const import (
     CONF_INFRARED_ENTITY_ID,
     CONF_PREAMP_IR_FRAMES,
@@ -34,7 +36,7 @@ from .const import (
     DEFAULT_IR_FRAMES,
     DOMAIN,
 )
-from .ir_codes import COMMANDS, PREAMP_ADDRESS, STREAMER_ADDRESS
+from .ir_codes import COMMANDS
 from .naim_streamer_client import NaimStreamerClient
 
 TRANSPORT_TO_HA_STATE = {
