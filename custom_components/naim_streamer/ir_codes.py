@@ -4,70 +4,62 @@ from dataclasses import dataclass
 
 from infrared_protocols.commands.rc5 import RC5Command
 
-STREAMER_ADDRESS = 0x15
-PREAMP_ADDRESS = 0x10
-
-
-def _streamer(command: int) -> RC5Command:
-    return RC5Command(address=STREAMER_ADDRESS, command=command)
-
-
-def _preamp(command: int) -> RC5Command:
-    return RC5Command(address=PREAMP_ADDRESS, command=command)
+from .codes.naim.gen1_preamp import NaimGen1PreampCode
+from .codes.naim.gen1_streamer import NaimGen1StreamerCode
 
 
 class NaimIRCodes:
     """Naim streamer (address 0x15) and preamp (address 0x10) RC5 codes."""
 
     # Transport
-    PLAY = _streamer(0x35)
-    STOP = _streamer(0x36)
-    PREVIOUS = _streamer(0x21)
-    NEXT = _streamer(0x20)
-    REWIND = _streamer(0x32)
-    FASTFORWARD = _streamer(0x34)
-    REPEAT = _streamer(0x1D)
-    SHUFFLE = _streamer(0x38)
+    PLAY = NaimGen1StreamerCode.PLAY.to_command()
+    STOP = NaimGen1StreamerCode.STOP.to_command()
+    PREVIOUS = NaimGen1StreamerCode.PREVIOUS.to_command()
+    NEXT = NaimGen1StreamerCode.NEXT.to_command()
+    REWIND = NaimGen1StreamerCode.REWIND.to_command()
+    FASTFORWARD = NaimGen1StreamerCode.FAST_FORWARD.to_command()
+    REPEAT = NaimGen1StreamerCode.REPEAT.to_command()
+    SHUFFLE = NaimGen1StreamerCode.SHUFFLE.to_command()
 
     # Navigation
-    UP = _streamer(0x50)
-    DOWN = _streamer(0x51)
-    LEFT = _streamer(0x55)
-    RIGHT = _streamer(0x56)
-    OK = _streamer(0x57)
-    EXIT = _streamer(0x53)
-    INFO = _streamer(0x0F)
-    SETUP = _streamer(0x54)
-    DISPLAY = _streamer(0x47)
-    PRESET = _streamer(0x0E)
-    STORE = _streamer(0x29)
+    UP = NaimGen1StreamerCode.UP.to_command()
+    DOWN = NaimGen1StreamerCode.DOWN.to_command()
+    LEFT = NaimGen1StreamerCode.LEFT.to_command()
+    RIGHT = NaimGen1StreamerCode.RIGHT.to_command()
+    OK = NaimGen1StreamerCode.OK.to_command()
+    EXIT = NaimGen1StreamerCode.EXIT.to_command()
+    INFO = NaimGen1StreamerCode.INFO.to_command()
+    SETUP = NaimGen1StreamerCode.SETUP.to_command()
+    DISPLAY = NaimGen1StreamerCode.DISPLAY.to_command()
+    PRESET = NaimGen1StreamerCode.PRESET.to_command()
+    STORE = NaimGen1StreamerCode.STORE.to_command()
 
     # Keypad
-    ZERO = _streamer(0x00)
-    ONE = _streamer(0x01)
-    TWO = _streamer(0x02)
-    THREE = _streamer(0x03)
-    FOUR = _streamer(0x04)
-    FIVE = _streamer(0x05)
-    SIX = _streamer(0x06)
-    SEVEN = _streamer(0x07)
-    EIGHT = _streamer(0x08)
-    NINE = _streamer(0x09)
+    ZERO = NaimGen1StreamerCode.ZERO.to_command()
+    ONE = NaimGen1StreamerCode.ONE.to_command()
+    TWO = NaimGen1StreamerCode.TWO.to_command()
+    THREE = NaimGen1StreamerCode.THREE.to_command()
+    FOUR = NaimGen1StreamerCode.FOUR.to_command()
+    FIVE = NaimGen1StreamerCode.FIVE.to_command()
+    SIX = NaimGen1StreamerCode.SIX.to_command()
+    SEVEN = NaimGen1StreamerCode.SEVEN.to_command()
+    EIGHT = NaimGen1StreamerCode.EIGHT.to_command()
+    NINE = NaimGen1StreamerCode.NINE.to_command()
 
     # Inputs
-    CD = _streamer(0x15)
-    RADIO = _streamer(0x14)
-    PC = _streamer(0x3D)
-    IPOD = _streamer(0x43)
-    TV = _streamer(0x44)
-    AV = _streamer(0x46)
-    HDD = _streamer(0x46)
-    AUX = _streamer(0x22)
+    CD = NaimGen1StreamerCode.CD.to_command()
+    RADIO = NaimGen1StreamerCode.RADIO.to_command()
+    PC = NaimGen1StreamerCode.PC.to_command()
+    IPOD = NaimGen1StreamerCode.IPOD.to_command()
+    TV = NaimGen1StreamerCode.TV.to_command()
+    AV = NaimGen1StreamerCode.AV.to_command()
+    HDD = NaimGen1StreamerCode.HDD.to_command()
+    AUX = NaimGen1StreamerCode.AUX.to_command()
 
     # Volume (preamp)
-    VOL_UP = _preamp(0x10)
-    VOL_DOWN = _preamp(0x11)
-    MUTE = _preamp(0x0D)
+    VOL_UP = NaimGen1PreampCode.VOLUME_UP.to_command()
+    VOL_DOWN = NaimGen1PreampCode.VOLUME_DOWN.to_command()
+    MUTE = NaimGen1PreampCode.MUTE.to_command()
 
 
 @dataclass(frozen=True)
@@ -82,6 +74,7 @@ class NaimButton:
     source: str | None = None
     # False for commands that are only sent (e.g. as a source), with no entity.
     has_button: bool = True
+
 
 C = NaimIRCodes
 
