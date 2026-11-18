@@ -49,7 +49,7 @@ In either case, you're presented with a configuration page.
 
 Once the integration has been configured, use its options to select or change the infrared emitter, or clear the selection to use UPnP without infrared controls. You can also specify the number of frames sent to both the streamer and the pre-amp. The default values will normally suffice, but increasing the number of repeated frames can improve reliability. Saving changed options reloads the integration.
 
-<img width="727" height="530" alt="image" src="https://github.com/user-attachments/assets/2017815b-e635-436c-b7e3-edc33f4bf03b" />
+<img width="747" height="705" alt="image" src="https://github.com/user-attachments/assets/0cdf1fab-7d91-410f-9b19-795a25619b08" />
 
 ## Infrared Entity
 
