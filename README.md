@@ -1,19 +1,32 @@
 # Naim Streamer Integration for Home Assistant
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![Available in Marketplace](https://img.shields.io/badge/Marketplace-Available-41BDF5)](#installation-with-marketplace)
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration)
 [![maintained](https://img.shields.io/maintenance/yes/2026.svg)](#)
 [![maintainer](https://img.shields.io/badge/maintainer-%20%40petes--UK-blue.svg)](#)
 [![version](https://img.shields.io/github/v/release/peteS-UK/naim_streamer)](#)
 
-A simple media player to control Naim Streamers from Home Assistant.
+A simple media player to control Naim NDX Streamers from Home Assistant.
 
-It's initially tested with NDX.
+The original NDX only provides a basic UpNP interface with play, pause, stop etc. support. Although the metadata is shown for all sources, the commands only work with the UPnP input. However, if you select a remote emitter during setup, all of the buttons from the remote are implemented and work across all inputs.
 
-The original NDX only provides a basic UpNP interface with play, pause, stop etc. support. Although the metadata is shown for all sources, the commands only work with the UPnP input. However, if you select a Broadlink or Tuya remote during setup, all of the buttons from the remote are implemented and work across all inputs.
-(from the core Infrared integration) during setup, all of the remote buttons are sent as RC5 commands and work across all inputs.
-## Installation
+This integration is for the original NDX.  It may also work with other first generation streamers, such as ND5, NDS etc. but this is untested.  It won't work with later streamers such as NDX2, NDS2 etc. which provide a much richer API and for which other integrations are available.
 
-The preferred installation approach is via Home Assistant Community Store - aka [HACS](https://hacs.xyz/). The [repo](https://github.com/peteS-UK/naim_streamer) is installable as a [Custom Repo](https://hacs.xyz/docs/faq/custom_repositories) via HACS.
+## Installation with Marketplace
+
+The [Marketplace](https://www.home-assistant.io/integrations/marketplace/) is built into **Home Assistant 2026.11 and later**; no separate store installation is needed.
+
+1. As an administrator, open **Settings → Marketplace** and accept its first-use notice if prompted.
+2. Search for **Naim Streamer** and open its page.
+3. Choose **Install**, review the version, then confirm **Install**. Account setup opens when installation finishes; continue with [Configuration](#configuration). A fresh installation does not need a restart.
+
+Existing HACS installations migrate automatically when you upgrade Home Assistant to 2026.11. Your installed integration and updates carry over; you do not need to reinstall it.
+
+## Installation with HACS
+
+For older versions of Home Assistant, you can install via Home Assistant Community Store - aka [HACS](https://hacs.xyz/).  Search for **Naim Streamer** and install the integration.
+
+## Manual Installation
 
 If you want to download the integration manually, create a new folder called naim_streamer under your custom_components folder in your config folder. If the custom_components folder doesn't exist, create it first. Once created, download the files and folders from the [github repo](https://github.com/peteS-UK/naim_streamer/tree/main/custom_components/naim_streamer) into this new naim_streamer folder.
 
@@ -21,27 +34,33 @@ Once downloaded either via HACS or manually, restart your Home Assistant server.
 
 ## Configuration
 
-The integration should discover your steamer automatically and list it in the Discovered list in the integration page. If it's not discovered automatically, for example if your network has multiple subnets, then you can manually add the integration. In either case, you're presented with a configuration page.
+The integration should discover your steamer automatically and list it in the Discovered list in the integration page. If it's not discovered automatically and if you're not installing from Marketplace, for example if your network has multiple subnets, then you can manually add the integration.  Go into your Integrations (under Settings, Devices & Services), select Add Integration, and choose the NAIM Streamer integration, or click the shortcut button below (requires My Homeassistant configured).
 
-<img width="501" height="942" alt="image" src="https://github.com/user-attachments/assets/e714ce66-1320-41f7-8e5c-44ac8c25bdbe" />
+[![Add Integration to your Home Assistant
+instance.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=naim_streamer)
 
-## Remote Entity
+This will display the configuration page
 
-The Naim streamers have no published API, and early devices such as the NDX have no API to properly control the device, other than a SOAP interface required for UPnP control. As such, this integration is in two parts. Firstly, it implements the UPnP interface for playback controls and to receive metadata and status information from the streamer. Secondly, if you have a remote ir blaster device and you select it in the Configuration page, it implements all of the buttons from the remote control as buttons in Home Assistant.
+In either case, you're presented with a configuration page.
+
+<img width="1166" height="1448" alt="image" src="https://github.com/user-attachments/assets/fdd373fe-e3aa-4ea1-965f-af04b806a7cd" />
+
+## Options
+
+Once the integration has been configured, use its options to select or change the infrared emitter, or clear the selection to use UPnP without infrared controls. You can also specify the number of frames sent to both the streamer and the pre-amp. The default values will normally suffice, but increasing the number of repeated frames can improve reliability. Saving changed options reloads the integration.
+
+<img width="747" height="705" alt="image" src="https://github.com/user-attachments/assets/0cdf1fab-7d91-410f-9b19-795a25619b08" />
+
+## Infrared Entity
+
+The Naim streamers have no published API, and early devices such as the NDX have no API to properly control the device, other than a SOAP interface required for UPnP control. As such, this integration is in two parts. Firstly, it implements the UPnP interface for playback controls and to receive metadata and status information from the streamer. Secondly, if you have a remote ir blaster device which is supported by the [Home Assistant Infrared Integration](https://www.home-assistant.io/integrations/infrared/) as an emitter, and you select it in the Configuration page, it implements all of the buttons from the remote control as buttons in Home Assistant.  The Infrared integration acts as an abstraction layer between this integration and other integrations which actually provide infrared entities, such as [Broadlink](https://www.home-assistant.io/integrations/broadlink/) or [Tuya Local](https://github.com/make-all/tuya-local).
 
 ## Volume Control
 
 The NDX doesn't actually have any digital volume control. The volume buttons on the remote as designed to control the volume on a Naim pre-amp. This is actually the preferred designed to maintain maximum sound quality. So, the volume control buttons only affect the volume if you have a Naim pre-amp. They are only available if you have a remote entity defined.
 
-IR commands alternate the RC5 toggle bit on each press, independently for the
-streamer and preamp addresses. The toggle state resets when the integration reloads.
-Volume and mute send two identical RC5 frames per press, matching the repeated
-signals in the original learned preamp codes.
+The streamer remote uses a combined Play/Pause button, rather than a separate Pause button.
 
-The streamer remote uses a combined Play/Pause button, rather than a separate
-Pause button.
+## Audio format sensor
 
-Playback position is sampled from the streamer's UPnP `GetPositionInfo`
-response when playback changes and every 30 seconds while playing. Home
-Assistant displays progress between samples; position is unavailable for
-inputs that do not report `RelTime`.
+The audio format sensor uses the MIME type from the current track's metadata. It is unknown when the source does not supply a MIME type. The format may describe a container rather than its codec; unrecognized MIME types are displayed as reported.

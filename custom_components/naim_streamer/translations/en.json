@@ -26,6 +26,29 @@
             }
         }
     },
+    "entity": {
+        "sensor": {
+            "format": {
+                "name": "Audio format"
+            }
+        }
+    },
+    "options": {
+        "error": {
+            "invalid_emitter": "Select an available infrared emitter."
+        },
+        "step": {
+            "init": {
+                "title": "Infrared settings",
+                "description": "Select an infrared emitter and set the total number of RC5 frames sent per press, including the initial frame.",
+                "data": {
+                    "infrared_entity_id": "Infrared emitter (optional)",
+                    "streamer_ir_frames": "Streamer frames",
+                    "preamp_ir_frames": "Preamp frames"
+                }
+            }
+        }
+    },
     "issues": {
         "reselect_ir_emitter": {
             "title": "Select an infrared emitter for {name}",

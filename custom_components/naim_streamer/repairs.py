@@ -43,7 +43,12 @@ class ReselectIREmitterFlow(RepairsFlow):
         if user_input is not None:
             data = {k: v for k, v in entry.data.items() if k not in LEGACY_REMOTE_KEYS}
             data[CONF_INFRARED_ENTITY_ID] = user_input[CONF_INFRARED_ENTITY_ID]
-            self.hass.config_entries.async_update_entry(entry, data=data)
+            options = {
+                k: v for k, v in entry.options.items() if k != CONF_INFRARED_ENTITY_ID
+            }
+            self.hass.config_entries.async_update_entry(
+                entry, data=data, options=options
+            )
             # Reloading re-evaluates the issue, which deletes it.
             await self.hass.config_entries.async_reload(entry.entry_id)
             return self.async_create_entry(data={})
