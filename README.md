@@ -1,6 +1,7 @@
 # Naim Streamer Integration for Home Assistant
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![Available in Marketplace](https://img.shields.io/badge/Marketplace-Available-41BDF5)](#installation-with-marketplace)
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration)
 [![maintained](https://img.shields.io/maintenance/yes/2026.svg)](#)
 [![maintainer](https://img.shields.io/badge/maintainer-%20%40petes--UK-blue.svg)](#)
 [![version](https://img.shields.io/github/v/release/peteS-UK/naim_streamer)](#)
@@ -11,9 +12,21 @@ The original NDX only provides a basic UpNP interface with play, pause, stop etc
 
 This integration is for the original NDX.  It may also work with other first generation streamers, such as ND5, NDS etc. but this is untested.  It won't work with later streamers such as NDX2, NDS2 etc. which provide a much richer API and for which other integrations are available.
 
-## Installation
+## Installation with Marketplace
 
-The preferred installation approach is via Home Assistant Community Store - aka [HACS](https://hacs.xyz/). The [repo](https://github.com/peteS-UK/naim_streamer) is installable as a [Custom Repo](https://hacs.xyz/docs/faq/custom_repositories) via HACS.
+The [Marketplace](https://www.home-assistant.io/integrations/marketplace/) is built into **Home Assistant 2026.11 and later**; no separate store installation is needed.
+
+1. As an administrator, open **Settings → Marketplace** and accept its first-use notice if prompted.
+2. Search for **Naim Streamer** and open its page.
+3. Choose **Install**, review the version, then confirm **Install**. Account setup opens when installation finishes; continue with [Configuration](#configuration). A fresh installation does not need a restart.
+
+Existing HACS installations migrate automatically when you upgrade Home Assistant to 2026.11. Your installed integration and updates carry over; you do not need to reinstall it.
+
+## Installation with HACS
+
+For older versions of Home Assistant, you can install via Home Assistant Community Store - aka [HACS](https://hacs.xyz/).  Search for **Naim Streamer** and install the integration.
+
+## Manual Installation
 
 If you want to download the integration manually, create a new folder called naim_streamer under your custom_components folder in your config folder. If the custom_components folder doesn't exist, create it first. Once created, download the files and folders from the [github repo](https://github.com/peteS-UK/naim_streamer/tree/main/custom_components/naim_streamer) into this new naim_streamer folder.
 
@@ -21,7 +34,7 @@ Once downloaded either via HACS or manually, restart your Home Assistant server.
 
 ## Configuration
 
-The integration should discover your steamer automatically and list it in the Discovered list in the integration page. If it's not discovered automatically, for example if your network has multiple subnets, then you can manually add the integration.Go into your Integrations (under Settings, Devices & Services), select Add Integration, and choose the NAIM Streamer integration, or click the shortcut button below (requires My Homeassistant configured).
+The integration should discover your steamer automatically and list it in the Discovered list in the integration page. If it's not discovered automatically and if you're not installing from Marketplace, for example if your network has multiple subnets, then you can manually add the integration.  Go into your Integrations (under Settings, Devices & Services), select Add Integration, and choose the NAIM Streamer integration, or click the shortcut button below (requires My Homeassistant configured).
 
 [![Add Integration to your Home Assistant
 instance.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=naim_streamer)
@@ -36,7 +49,7 @@ In either case, you're presented with a configuration page.
 
 Once the integration has been configured, use its options to select or change the infrared emitter, or clear the selection to use UPnP without infrared controls. You can also specify the number of frames sent to both the streamer and the pre-amp. The default values will normally suffice, but increasing the number of repeated frames can improve reliability. Saving changed options reloads the integration.
 
-<img width="727" height="530" alt="image" src="https://github.com/user-attachments/assets/2017815b-e635-436c-b7e3-edc33f4bf03b" />
+<img width="747" height="705" alt="image" src="https://github.com/user-attachments/assets/0cdf1fab-7d91-410f-9b19-795a25619b08" />
 
 ## Infrared Entity
 
